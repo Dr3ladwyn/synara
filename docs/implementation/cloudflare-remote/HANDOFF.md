@@ -16,6 +16,9 @@ preesistenti, zero errori), 119 test Worker, typecheck e build backend. Verifica
 Wrangler/D1 e browser locale con quattro turni sintetici: due riusciti, uno fallito,
 uno annullato; richieste separate, provider e campioni token corretti.
 Riutilizzati Stat, TableWrap, EChart e le tabelle/eventi esistenti.
+Dashboard pubblicata: Worker `481d06ef-2370-4825-8323-c848e3004d78`, verificato
+anche con cf CLI. Health 200, API senza sessione 401 e nuova vista autenticata
+controllati online; nessun nuovo dato sintetico inserito in produzione.
 
 Restano osservazioni desktop: manca una fonte unica sul computer che esegue il
 turno per contare indipendentemente dai client e deduplicare tra dispositivi. Non
