@@ -17,9 +17,16 @@ commit `fd9b3ce` con correzione di compatibilità `7f14dd0`: endpoint `/v1/produ
 privata, deduplica UUID e cleanup limitato dei dati oltre 30 giorni. Allineati account
 e ID D1 ai binding della versione live `cb10fe76`; conservata la verifica del segreto
 per l'IP inoltrato sulle route diagnostiche legacy. Il confronto remoto conferma che
-resta pendente soltanto `0005_product_events.sql`. **Deploy non eseguito**: il login
-Workers/D1 è rinnovato, ma resta richiesta la conferma per lo scope specifico
-Workers Scripts Write. Il solo commit non prova un deploy.
+era pendente soltanto `0005_product_events.sql`. **Deploy completato con autorizzazione il 5 ottobre 2026**:
+migrazione applicata in Synara Orgs e Worker live alla versione
+`bd556f7d-088e-4d4c-adbf-b0d02d4ad4e3` (4 ottobre, 23:48 UTC).
+Verificati health 200, dashboard API senza sessione 401, JSON malformato 400,
+content type errato 415; un evento sintetico accettato, retry duplicato accettato zero,
+evento visibile nella dashboard autenticata con durata 42 ms. Rimosso esclusivamente
+il campione di prova e verificato zero righe residue. Segreti e binding esistenti
+conservati; cron giornaliero installato (esecuzione temporizzata non ancora osservata).
+Versione precedente per rollback Worker: `cb10fe76-56c7-4e00-ae25-0fe5f36a3167`;
+la tabella additiva può restare. Questo deploy riguarda analytics, non le migrazioni Inbox.
 
 Verifiche di implementazione:
 

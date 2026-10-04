@@ -69,6 +69,13 @@ errors, real SQL deduplication and authenticated aggregates. Final run results
 belong in the latest handoff checkpoint; implementation alone is not proof of a
 live deployment or a signed app release.
 
+Production checkpoint (5 October 2026): the additive D1 migration and Worker
+`bd556f7d-088e-4d4c-adbf-b0d02d4ad4e3` are deployed. Synthetic ingestion,
+deduplication, authenticated dashboard aggregates and unauthenticated rejection
+passed; the single synthetic event was removed and zero probe rows remain.
+The daily retention trigger is installed; its scheduled execution is not yet observed.
+Client builds and physical-device qualification remain release work.
+
 1. Validate all client schemas against Worker acceptance.
 2. Apply the additive D1 product migration and deploy the receiving Worker/dashboard.
 3. Verify synthetic ingestion, duplicate handling and private dashboard access.
