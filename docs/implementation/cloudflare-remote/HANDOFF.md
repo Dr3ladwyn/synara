@@ -2,6 +2,26 @@
 
 Aggiornato il **5 ottobre 2026**. I checkpoint datati sostituiscono gli stati precedenti solo per le superfici espressamente verificate. L'ultimo passaggio implementa le analytics di prodotto su desktop, iPhone/iPad e backend Cloudflare; i checkpoint precedenti restano storici.
 
+## Contatori turni e provider — 5 ottobre 2026
+
+Dashboard Product estesa con richieste accettate separate dai turni terminali
+osservati, andamento giornaliero dei turni, riusciti/falliti/annullati e tabella
+provider con token disponibili e numero di campioni. Mancanti restano sconosciuti,
+zero dichiarati restano zero. Nessuna nuova migrazione o raccolta di nomi modello.
+Corretto il server: il provider viene conservato su tutti i completamenti, invece
+che sul solo Claude. La regressione Codex/Pi falliva prima e passa dopo il fix.
+
+Passati 146 test projection/ingestion, formato/lint/typecheck workspace (warning
+preesistenti, zero errori), 119 test Worker, typecheck e build backend. Verifica
+Wrangler/D1 e browser locale con quattro turni sintetici: due riusciti, uno fallito,
+uno annullato; richieste separate, provider e campioni token corretti.
+Riutilizzati Stat, TableWrap, EChart e le tabelle/eventi esistenti.
+
+Restano osservazioni desktop: manca una fonte unica sul computer che esegue il
+turno per contare indipendentemente dai client e deduplicare tra dispositivi. Non
+presentare i nuovi contatori come consumo globale completo. La correzione del
+provider richiede la nuova build server/desktop; nessuna nuova build mobile qui.
+
 ## Implementazione analytics opt-in — 5 ottobre 2026
 
 Implementati contratto, sender desktop, consenso locale in Settings → General → Privacy,
