@@ -13,10 +13,13 @@ Riutilizzati SettingsRow/SettingsSection/Switch, trasporto esistente e component
 nuovi sender separati perché la diagnostica Beta non può diventare la raccolta Stable.
 
 Backend nella [PR draft #3](https://github.com/Emanuele-web04/synara-beta-diagnostics/pull/3),
-commit `fd9b3ce`: endpoint `/v1/product-events`, tabella D1 separata, dashboard Product
-privata, deduplica UUID e cleanup limitato dei dati oltre 30 giorni. Il codice della repo
-contiene ancora l'ID D1 precedente alla migrazione di account: prima del deploy va
-confrontato con i binding attivi di Synara Orgs. Il solo commit non prova un deploy.
+commit `fd9b3ce` con correzione di compatibilità `7f14dd0`: endpoint `/v1/product-events`, tabella D1 separata, dashboard Product
+privata, deduplica UUID e cleanup limitato dei dati oltre 30 giorni. Allineati account
+e ID D1 ai binding della versione live `cb10fe76`; conservata la verifica del segreto
+per l'IP inoltrato sulle route diagnostiche legacy. Il confronto remoto conferma che
+resta pendente soltanto `0005_product_events.sql`. **Deploy non eseguito**: il login
+Workers/D1 è rinnovato, ma resta richiesta la conferma per lo scope specifico
+Workers Scripts Write. Il solo commit non prova un deploy.
 
 Verifiche di implementazione:
 
@@ -30,7 +33,7 @@ Verifiche di implementazione:
 - Sender desktop reale → Worker Wrangler locale → D1: tutti gli 8 tipi accettati,
   duplicati accettati zero, default-off e opt-out dopo riavvio senza invii,
   campi privati estranei esclusi. Nessun dato utente usato nel test.
-- Worker: 114 test, typecheck e build passati; HTTP locale controllato con auth,
+- Worker: 118 test, typecheck, build e dry-run del deploy passati; HTTP locale controllato con auth,
   input malformati, duplicati, token parziali e cleanup di 10.001 righe sintetiche.
 - iPhone/iPad: 197 test SwiftPM per branch e build iOS complete senza firma passati.
   Simulatore non disponibile in questa sessione: nuova UI mobile non provata dal vivo.
