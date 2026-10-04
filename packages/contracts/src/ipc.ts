@@ -6,6 +6,7 @@ import type {
   SavedInboxRecapIdInput,
 } from "./inboxRecaps";
 import type { RemoteResourceReference } from "./remoteResources";
+import type { DesktopProductAnalyticsBridge } from "./productAnalytics";
 import { Schema } from "effect";
 import type {
   LoadProjectImportHistoryInput,
@@ -927,6 +928,7 @@ export const DesktopDiagnosticBreadcrumb = Schema.Struct({
 export type DesktopDiagnosticBreadcrumb = typeof DesktopDiagnosticBreadcrumb.Type;
 
 export interface DesktopBridge {
+  productAnalytics?: DesktopProductAnalyticsBridge;
   /** Present only when the desktop main process enables baked-in Beta diagnostics. */
   betaDiagnostics?: {
     rendererReady: () => void;

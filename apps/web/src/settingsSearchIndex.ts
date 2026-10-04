@@ -59,6 +59,12 @@ export function settingsSearchEntryTarget(entry: SettingsSearchEntry): string | 
 export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   // ── General ────────────────────────────────────────────────────────────────
   {
+    id: "general:share-product-analytics",
+    section: "general",
+    title: "Share product analytics",
+    keywords: "Privacy consent anonymous statistics collection tracking performance Cloudflare",
+  },
+  {
     id: "general:default-provider",
     section: "general",
     title: "Default provider",

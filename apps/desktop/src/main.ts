@@ -4,6 +4,8 @@ import { createLinuxCuaDriverHost } from "./linuxCuaDriverHost";
 import { LinuxEscapeKillSwitchMonitor, linuxEscapeSession } from "./linuxEscapeKillSwitchMonitor";
 import { ComputerFrameTap } from "./computerFrameTap";
 import { ComputerShield } from "./computerShield";
+import { ProductAnalytics } from "./productAnalytics";
+import { attachProductAnalyticsIpc } from "./productAnalyticsIpc";
 import { createDesktopNotificationRetainer } from "./notificationRetention";
 import { registerComputerDesktopLifecycle } from "./computerDesktopLifecycle";
 import { COMPUTER_PERMISSION_KINDS } from "@synara/shared/computerGrants";
@@ -419,6 +421,7 @@ const BACKEND_LOG_FILE_NAME = "server-child.log";
 const LOG_FILE_MAX_BYTES = 10 * 1024 * 1024;
 const LOG_FILE_MAX_FILES = 10;
 const APP_RUN_ID = Crypto.randomBytes(6).toString("hex");
+const PRODUCT_ANALYTICS_STARTUP_AT = performance.now();
 const DESKTOP_BACKEND_SHUTDOWN_TOKEN = Crypto.randomBytes(32).toString("hex");
 const DESKTOP_BROWSER_HOST_CAPABILITY = Crypto.randomBytes(32).toString("base64url");
 const DESKTOP_BROWSER_HOST_CAPABILITY_FD = 3;
@@ -463,6 +466,12 @@ const betaDiagnostics =
       })
     : null;
 
+const productAnalytics = new ProductAnalytics({
+  homeDir: BASE_DIR,
+  channel: desktopFlavor === "beta" ? "beta" : "stable",
+  appVersion: app.getVersion(),
+  platform: process.platform,
+});
 if (betaDiagnostics) {
   crashReporter.start({
     productName: APP_DISPLAY_NAME,
@@ -4833,6 +4842,7 @@ async function shutdownDesktopRuntime(reason: string): Promise<void> {
         trackBetaDiagnostics("app.exit", { kind: "lifecycle" });
         await betaDiagnostics.dispose().catch(() => undefined);
       }
+      productAnalytics.dispose();
       desktopShutdownComplete = true;
       writeDesktopLogHeader(`${reason} shutdown complete`);
     },
@@ -4955,6 +4965,8 @@ function requestGracefulAppQuit(reason: string): void {
 
 function registerIpcHandlers(): void {
   const storageSnapshotPath = resolveSynaraStorageSnapshotPath(app.getPath("userData"));
+
+  attachProductAnalyticsIpc(productAnalytics, () => mainWindow?.webContents ?? null);
 
   ipcMain.removeAllListeners(IPC.betaDiagnostics.enabled);
   ipcMain.on(IPC.betaDiagnostics.enabled, (event: IpcMainEvent) => {
@@ -6174,6 +6186,16 @@ if (hasSingleInstanceLock) {
     .whenReady()
     .then(() => {
       writeDesktopLogHeader("app ready");
+      productAnalytics.start();
+      productAnalytics.track({ event: "app.open", outcome: "succeeded" });
+      productAnalytics.track({
+        event: "performance.startup",
+        outcome: "succeeded",
+        durationMs: Math.min(
+          86_400_000,
+          Math.round(performance.now() - PRODUCT_ANALYTICS_STARTUP_AT),
+        ),
+      });
       if (betaDiagnostics) {
         betaDiagnostics.start();
         const previousLaunchVersion = parseLastLaunchVersion(readLaunchVersionRecordContents());

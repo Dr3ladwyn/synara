@@ -38,6 +38,7 @@ import {
   useAppSettings,
 } from "../appSettings";
 import { APP_VERSION } from "../branding";
+import { ProductAnalyticsSettingsPanel } from "~/components/settings/ProductAnalyticsSettingsPanel";
 import { AdvancedSettingsPanel } from "~/components/settings/AdvancedSettingsPanel";
 import { AppIconPicker } from "~/components/settings/AppIconPicker";
 import {
@@ -635,6 +636,7 @@ function SettingsRouteView() {
     <div className="space-y-6">
       <SafariAccessSetupButton />
       <BetaChannelSettingsPanel active={true} />
+      <ProductAnalyticsSettingsPanel />
       <SettingsSection title="Core defaults">
         <SettingsRow
           title="Default provider"

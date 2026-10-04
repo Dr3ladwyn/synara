@@ -44,6 +44,11 @@ export const DESKTOP_IPC_CHANNELS = {
     reportError: "desktop:beta-diagnostics-report-error",
     recordActivity: "desktop:beta-diagnostics-record-activity",
   },
+  productAnalytics: {
+    getState: "desktop:product-analytics-get-state",
+    setEnabled: "desktop:product-analytics-set-enabled",
+    track: "desktop:product-analytics-track",
+  },
   updateState: "desktop:update-state",
   updateGetState: "desktop:update-get-state",
   updateCheck: "desktop:update-check",

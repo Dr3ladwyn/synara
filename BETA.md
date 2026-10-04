@@ -335,7 +335,8 @@ visible trail no longer subscribes. First use can request macOS audio access.
 
 Beta builds ship always-on diagnostics — crash reports plus anonymous usage
 counts (which providers are used, how many chats and turns) — while stable
-builds contain no sender code at all. See [diagnostics.md](docs/diagnostics.md) for
+builds never enable the Beta diagnostics sender. Both channels separately offer
+default-off product analytics through Settings → General → Privacy. See [diagnostics.md](docs/diagnostics.md) for
 exactly what is collected, what usage counters exclude, and how the Cloudflare
 ingest works.
 

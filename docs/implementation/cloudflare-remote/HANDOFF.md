@@ -1,6 +1,45 @@
 # Remote connections — punto di ripartenza
 
-Aggiornato il **5 ottobre 2026**. I checkpoint datati sostituiscono gli stati precedenti solo per le superfici espressamente verificate. L'ultimo passaggio riguarda il desktop e l'audit analytics; il checkpoint mobile resta quello del 4 ottobre.
+Aggiornato il **5 ottobre 2026**. I checkpoint datati sostituiscono gli stati precedenti solo per le superfici espressamente verificate. L'ultimo passaggio implementa le analytics di prodotto su desktop, iPhone/iPad e backend Cloudflare; i checkpoint precedenti restano storici.
+
+## Implementazione analytics opt-in — 5 ottobre 2026
+
+Implementati contratto, sender desktop, consenso locale in Settings → General → Privacy,
+osservatori di navigazione/trasporto e parità nativa nei due branch mobili esistenti.
+Il nuovo flusso è **spento per impostazione predefinita** in Stable/Beta e indipendente
+sia dalle diagnostiche crash Beta sia dalle statistiche account/Inbox. Dettagli e limiti:
+[contratto operativo](PRODUCT-ANALYTICS-AUDIT.md), [privacy](../../diagnostics.md#product-analytics).
+Riutilizzati SettingsRow/SettingsSection/Switch, trasporto esistente e componenti nativi;
+nuovi sender separati perché la diagnostica Beta non può diventare la raccolta Stable.
+
+Backend nella [PR draft #3](https://github.com/Emanuele-web04/synara-beta-diagnostics/pull/3),
+commit `fd9b3ce`: endpoint `/v1/product-events`, tabella D1 separata, dashboard Product
+privata, deduplica UUID e cleanup limitato dei dati oltre 30 giorni. Il codice della repo
+contiene ancora l'ID D1 precedente alla migrazione di account: prima del deploy va
+confrontato con i binding attivi di Synara Orgs. Il solo commit non prova un deploy.
+
+Verifiche di implementazione:
+
+- Formato, lint e typecheck desktop/workspace passati; warning preesistenti di lint.
+- Suite workspace: 16.020 passati, 251 saltati, un errore nel recupero concorrente
+  di un lock credenziali. Corretta la race `ENOENT` nella rilettura sotto guardia;
+  i 10 test mirati di lock/account passano. La suite completa non è stata ripetuta
+  dopo questa correzione circoscritta. I salti includono 200 test API senza PostgreSQL.
+- 8 test sender/IPC e 86 test web/trasporto passati; test browser dello switch e del
+  fallimento di salvataggio passato. Screenshot: `apps/web/src/components/settings/__screenshots__/product-analytics-consent.png` (generato, ignorato da Git).
+- Sender desktop reale → Worker Wrangler locale → D1: tutti gli 8 tipi accettati,
+  duplicati accettati zero, default-off e opt-out dopo riavvio senza invii,
+  campi privati estranei esclusi. Nessun dato utente usato nel test.
+- Worker: 114 test, typecheck e build passati; HTTP locale controllato con auth,
+  input malformati, duplicati, token parziali e cleanup di 10.001 righe sintetiche.
+- iPhone/iPad: 197 test SwiftPM per branch e build iOS complete senza firma passati.
+  Simulatore non disponibile in questa sessione: nuova UI mobile non provata dal vivo.
+
+Limiti intenzionali: le completion sono osservazioni desktop live, non un totale globale
+multi-client; native non inventa completamenti dall'ack di invio. Token assenti restano
+sconosciuti, nomi di modelli non vengono raccolti. Gli attuali build nativi sono etichettati
+`stable`, non avendo un selettore di flavor dedicato. Servono nuovi build client per usare
+lo switch: questo checkpoint non è un rilascio firmato né TestFlight.
 
 ## Integrazione di main e audit analytics — 5 ottobre 2026
 

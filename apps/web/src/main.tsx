@@ -11,12 +11,17 @@ import { APP_DISPLAY_NAME } from "./branding";
 import { isElectron } from "./env";
 import { isMacPlatform } from "./lib/utils";
 import { installGlassOverlayCutout } from "./lib/glassOverlayCutout";
+import { trackProductNavigation } from "./lib/productAnalytics";
 import { installRendererErrorDiagnostics } from "./lib/rendererErrorDiagnostics";
 
 const disposeRendererDiagnostics = installRendererErrorDiagnostics();
 if (import.meta.hot) import.meta.hot.dispose(() => disposeRendererDiagnostics?.());
 
 const router = getRouter(appHistory);
+const disposeProductNavigation = router.subscribe("onResolved", ({ toLocation, pathChanged }) => {
+  if (pathChanged) trackProductNavigation(toLocation.pathname);
+});
+if (import.meta.hot) import.meta.hot.dispose(disposeProductNavigation);
 const rootElement = document.getElementById("root") as HTMLElement;
 
 document.title = APP_DISPLAY_NAME;

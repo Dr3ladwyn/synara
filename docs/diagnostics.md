@@ -4,7 +4,9 @@ Synara Beta ships always-on diagnostics so the team can see crashes and release
 health on real machines instead of waiting for bug reports. This document is the
 authoritative description of what leaves your computer.
 
-**Stable builds collect nothing.** The diagnostics module is only constructed
+**Stable builds never send Beta diagnostics.** Separate, default-off product analytics
+are available in both channels; see [Product analytics](#product-analytics).
+The Beta diagnostics module is only constructed
 when the packaged build's `synaraDesktopFlavor` field equals `"beta"` — a field baked
 in at build time that cannot be flipped by an environment variable. (The module
 source is bundled into the shared desktop code, but in a stable build it is
@@ -61,7 +63,7 @@ main, renderer, GPU, and utility processes, retaining four samples. This does
 not measure the separate backend's Node heap. Recent activity and memory samples
 are attached to existing error stacks and crash log tails within their existing
 size limits and pass through the shared redactor. Actions and memory samples do
-not create their own uploads or disk records; Stable exposes no collection bridge
+not create their own uploads or disk records; Stable exposes no Beta diagnostics bridge
 and starts no sampler. Context can help correlate failures with preceding work,
 but is not a proof of causation and cannot reconstruct older reports.
 
@@ -153,3 +155,41 @@ failure is swallowed.
 Previously shipped Beta builds still use `https://synara-beta-diagnostics.kartik-9f9.workers.dev`;
 that endpoint forwards ingestion to the new service. The migration preserves
 existing diagnostics and does not change collection or retention.
+
+## Product analytics
+
+Desktop Settings → General → Privacy offers **Share product analytics**, off by
+default in Stable and Beta. Consent belongs to the controlling installation,
+not the account or a connected host. Browser/CLI clients do not expose this
+desktop sender. iPhone/iPad provide their own local consent control.
+
+When enabled, fixed events record app readiness, selected feature opens, pairing,
+connection/reconnection outcomes, chat request acknowledgements and startup
+duration. The desktop also observes live terminal turn activities; available
+usage counters are included without model names. Missing counters stay unknown.
+These observations are not complete host execution totals: closed clients,
+history and native completion events are not included. They are not billing data.
+
+Each envelope contains a random per-installation UUID, event UUID, timestamp,
+app version, channel, surface and platform. Additional fields are restricted to
+fixed enums and bounded durations/token counts. No account/provider identifiers,
+model names, task/project names, routes, URLs, prompts, files or error text enter
+this path. The UUID is independent of the Beta diagnostics identity.
+
+Events go to the Cloudflare Worker `/v1/product-events` and a separate D1
+`product_events` table, viewed through its authenticated Product dashboard.
+They are unrelated to private account usage, Saved Inbox and public profile
+data. Raw product events have a 30-day retention policy, enforced through
+bounded scheduled cleanup; Beta diagnostic retention is unchanged.
+
+The desktop uses its flavor-specific `product-analytics` directory for consent,
+the random identifier and an expiring queue (at most 500 events, seven days).
+Uploads are limited to 50 events/64 KiB, with timeout and backoff. Turning off
+collection aborts pending uploads where possible, clears unsent events and
+removes the identifier. Re-enabling generates a new identifier; it does not
+link the new installation identity to earlier events. Turning off cannot
+retract a request already received by Cloudflare; retention applies there.
+
+Release dependency: deploy the product D1 migration and receiving Worker before
+shipping these clients. The existing `/v1/events` and `/v1/crash` routes remain
+Beta-only and are not controlled by this new switch.
