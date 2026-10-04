@@ -4,6 +4,8 @@ import { readWorkspaceFrame } from "./lib/hosts/workspaceFrame";
 // Layer: Web transport
 // Exports: WsTransport plus stream-selection helpers used by tests.
 
+import { recordRendererActivity, rendererRpcActivity } from "./lib/rendererErrorDiagnostics";
+
 import {
   ORCHESTRATION_WS_CHANNELS,
   ORCHESTRATION_WS_METHODS,
@@ -858,6 +860,24 @@ export class WsTransport {
     params?: unknown,
     options?: WsRequestOptions,
   ): Promise<T> {
+    const activity = rendererRpcActivity(method, params);
+    if (!activity) return this.requestInternal<T>(method, params, options);
+    recordRendererActivity(activity, "started");
+    try {
+      const result = await this.requestInternal<T>(method, params, options);
+      recordRendererActivity(activity, "succeeded");
+      return result;
+    } catch (error) {
+      recordRendererActivity(activity, "failed");
+      throw error;
+    }
+  }
+
+  private async requestInternal<T = unknown>(
+    method: string,
+    params?: unknown,
+    options?: WsRequestOptions,
+  ): Promise<T> {
     if (this.disposed) throw new Error("Transport disposed");
     const requestOptions: WsRequestOptions =
       options?.timeoutMs === undefined ? { ...options, timeoutMs: REQUEST_TIMEOUT_MS } : options;
@@ -999,6 +1019,7 @@ export class WsTransport {
         isRuntimeInterruptFailure(error) ||
         Schema.is(RpcClientError.RpcClientError)(error)
       ) {
+        recordRendererActivity("transport.reconnect", "started");
         failure = new WsTransportRequestInterruptedError({
           message: `WebSocket RPC ${method} was interrupted by a transport reconnect.`,
           code: "WS_REQUEST_RECONNECTED",

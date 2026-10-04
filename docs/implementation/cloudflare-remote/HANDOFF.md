@@ -1,6 +1,16 @@
 # Remote connections — punto di ripartenza
 
-Aggiornato il **4 ottobre 2026**. Questo checkpoint sostituisce gli stati di pubblicazione e i limiti d'integrazione delle sezioni storiche sotto. La richiesta attuale autorizza l'allineamento alle icone e alle viste recenti su desktop, iPhone e iPad; la precedente pausa del restyling non blocca questo aggiornamento.
+Aggiornato il **5 ottobre 2026**. I checkpoint datati sostituiscono gli stati precedenti solo per le superfici espressamente verificate. L'ultimo passaggio riguarda il desktop e l'audit analytics; il checkpoint mobile resta quello del 4 ottobre.
+
+## Integrazione di main e audit analytics — 5 ottobre 2026
+
+Integrati i quattro nuovi commit di `origin/main`, fino a `f2069a6f316e61601be23281c9ebab86982b4252`, preservando la cronologia condivisa con un merge. Backup: `codex/remote-before-main-20261005`, a `db9aa8f0eae03b128dad0b28e7b2d1e5cf422d22`. Unico conflitto testuale in `BETA.md`: conservati sia i gate remote/account sia la nuova descrizione Auto-fix CI. Nessuna nuova migrazione o modifica al protocollo remoto; il nuovo bridge di diagnostica resta opzionale e Beta-only.
+
+La base aggiornata comprende contesto diagnostico limitato e campioni memoria, correzioni del teardown browser/Devin, del toggle sidebar e dell'overflow dei pannelli. Revisione semantica del wrapper RPC: nessun nuovo bypass dei permessi o cambiamento dell'host di esecuzione individuato. Le breadcrumb sono contesto per errori/crash, non metriche complete di adozione o di completamento del turno.
+
+Passati `bun run fmt:check`, `bun run lint` (896 warning, zero errori), `bun run typecheck` e 12 test browser su sidebar, overlay e transcript. La suite workspace ha eseguito **16.007 test passati, 251 saltati e 2 falliti**: timeout nella selezione PR di GitManager e mancata icona nella fixture Windows Store. Rieseguiti separatamente i due file, **64 test passati senza modifiche a codice o assertion**. Questo non trasforma la prima esecuzione completa in una run verde; resta una segnalazione di instabilità sotto suite. Il primo tentativo in sandbox era stato bloccato sulle porte locali e non è evidenza di regressione dell'app. Nessun nuovo test live tra Mac, build mobile o deploy in questo passaggio.
+
+Tre subagent GPT-6 Luna High hanno confrontato il progetto upstream, la raccolta Synara e l'integrazione. Il confronto usa un checkout fresco del progetto upstream e del Worker Cloudflare. Risultato e piano implementativo in [PRODUCT-ANALYTICS-AUDIT.md](PRODUCT-ANALYTICS-AUDIT.md): scelta richiesta **Cloudflare, Beta e Stable, controllo nelle impostazioni**. Product analytics, consenso, dashboard dedicata ed eventi nativi **non sono ancora implementati**; nessun servizio PostHog aggiunto. Lo stato dei deploy account/Inbox non cambia.
 
 ## Integrazione desktop e mobile — 4 ottobre 2026
 

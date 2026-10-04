@@ -285,7 +285,7 @@ To put a feature behind the list:
 Promote a feature to Stable by deleting its entry; every gate resolves itself.
 
 The list currently contains `groups` (Hubs), `tasks` (Tasks), `inbox` (Inbox),
-`remoteConnections`, `accountProfileSync`, and `pull-request-auto-fix`, all gated off
+`remoteConnections`, `accountProfileSync`, and `pull-request-auto-fix` (Auto-fix CI), all gated off
 in Stable. Oh My Pi, the rail sidebar layout, and message trail sound are available
 in both Stable and Beta.
 
@@ -318,6 +318,11 @@ Account profiles additionally require the server opt-in `SYNARA_ACCOUNT_PROFILE_
 it activates historical aggregate usage sync for the signed-in account. The UI reads
 the server capability, and publication remains a separate explicit choice.
 See the [profiles trial guide](apps/profiles/README.md).
+
+`pull-request-auto-fix` enables the opt-in **Auto-fix CI** action in a pull
+request's menu. The server watches checks for an enabled PR and can ask its
+linked agent chat to address failures. Stable refuses the corresponding APIs
+and does not run the watcher. This does not enable automatic merging.
 
 Message trail sound is opt-in under **Settings → Chat → Message trail sound**
 on macOS desktop in both Stable and Beta. It follows system audio (macOS 14.2+),
