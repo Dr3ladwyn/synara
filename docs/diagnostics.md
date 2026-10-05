@@ -136,7 +136,8 @@ or loopback targets are accepted). Events land in a Cloudflare D1 database and
 are retained without automatic expiry so crash and error trends can be compared
 across beta releases. Crash dumps land in the private `synara-beta-crash-dumps`
 R2 bucket and also have no automatic expiry. The ingest worker and its private
-dashboard live outside this repository in the Synara Orgs Cloudflare account.
+dashboard live in [apps/analytics](../apps/analytics/README.md) and deploy to the
+Synara Orgs Cloudflare account.
 The worker re-runs the same allowlist and
 `redactDiagnosticText` and drops unknown events/fields, so the documented
 schema is enforced at the endpoint, not just the client.

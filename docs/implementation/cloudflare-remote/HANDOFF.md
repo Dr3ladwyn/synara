@@ -1,3 +1,12 @@
+## Analytics in this monorepo — 5 October 2026
+
+Dashboard, Worker, D1 migrations, legacy forwarder and tests now live in
+[`apps/analytics`](../../../apps/analytics/README.md) on this branch/PR. The
+separate repository PR #3 is historical; it is no longer a release dependency.
+Source imported from `synara-beta-diagnostics` commit `c2fe29c`, including all
+four Product sections. Existing Cloudflare resources and client URLs are retained.
+Use the workspace commands for future builds and deployments.
+
 # Remote connections — punto di ripartenza
 
 Aggiornato il **5 ottobre 2026**. I checkpoint datati sostituiscono gli stati precedenti solo per le superfici espressamente verificate. L'ultimo passaggio implementa le analytics di prodotto su desktop, iPhone/iPad e backend Cloudflare; i checkpoint precedenti restano storici.
