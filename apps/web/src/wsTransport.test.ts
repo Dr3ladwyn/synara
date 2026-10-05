@@ -348,9 +348,12 @@ describe("WsTransport", () => {
         expect(run).toHaveBeenCalledTimes(
           outcome === "completed" || outcome === "rejected" ? 2 : 1,
         );
-        expect(run).toHaveBeenNthCalledWith(1, params);
+        expect(run).toHaveBeenNthCalledWith(
+          1,
+          outcome === "older-server" ? params : { ...params, recoverable: true },
+        );
         if (run.mock.calls.length === 2)
-          expect(run).toHaveBeenNthCalledWith(2, { ...params, resume: true });
+          expect(run).toHaveBeenNthCalledWith(2, { ...params, recoverable: true, resume: true });
       } finally {
         vi.useRealTimers();
       }

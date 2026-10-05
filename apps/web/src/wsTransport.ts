@@ -2190,6 +2190,7 @@ export class WsTransport {
     callerSignal?: AbortSignal,
   ): Promise<GitRunStackedActionResult> {
     const canRecover = this.compatibility?.capabilities.includes(WS_GIT_ACTION_RECOVERY_CAPABILITY);
+    const command = canRecover ? { ...(params as object), recoverable: true } : params;
     const signal = callerSignal
       ? AbortSignal.any([callerSignal, this.lifetime.signal])
       : this.lifetime.signal;
@@ -2211,7 +2212,7 @@ export class WsTransport {
         }
         return await this.runGitActionStream(
           client,
-          resume ? { ...(params as object), resume: true } : params,
+          resume ? { ...(command as object), resume: true } : command,
           signal,
         );
       } catch (error) {

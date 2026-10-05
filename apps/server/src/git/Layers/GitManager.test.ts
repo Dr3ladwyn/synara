@@ -2892,6 +2892,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         });
         const input = {
           actionId: "one-commit-one-push",
+          recoverable: true,
           cwd: repoDir,
           action: "commit_push" as const,
           commitMessage: "Survive reconnect",

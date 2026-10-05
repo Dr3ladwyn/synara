@@ -892,7 +892,12 @@ describe("websocketRpcRouteLayer connection lifecycle", () => {
     const server = await startTestServer();
     try {
       const first = await connectSession(server);
-      const input = { actionId: "socket-reconnect", cwd: "/repo", action: "push" };
+      const input = {
+        actionId: "socket-reconnect",
+        cwd: "/repo",
+        action: "push",
+        recoverable: true,
+      };
       first.socket.send(
         JSON.stringify({
           _tag: "Request",

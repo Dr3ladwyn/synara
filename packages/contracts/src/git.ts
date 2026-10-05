@@ -222,6 +222,8 @@ export type GitSummarizeDiffInput = typeof GitSummarizeDiffInput.Type;
 
 export const GitRunStackedActionInput = Schema.Struct({
   actionId: TrimmedNonEmptyStringSchema,
+  // Only recovery-aware clients opt into work that survives observer loss.
+  recoverable: Schema.optional(Schema.Boolean),
   // Reattach only: never start a missing action after a lost acknowledgement.
   resume: Schema.optional(Schema.Boolean),
   cwd: TrimmedNonEmptyStringSchema,
