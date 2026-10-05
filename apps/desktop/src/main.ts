@@ -120,7 +120,7 @@ import {
   type BetaDiagnosticsEventName,
 } from "./betaDiagnostics";
 import { attachBetaRendererDiagnostics } from "./betaRendererDiagnostics";
-import { showDesktopConfirmDialog } from "./confirmDialog";
+import { guardDesktopWindowClose, showDesktopConfirmDialog } from "./confirmDialog";
 import {
   desktopAppIconResourceName,
   isDesktopAppIcon,
@@ -571,6 +571,7 @@ let isUpdaterQuitAndInstallInFlight = false;
 const updateInstallPreparation = makeUpdateInstallPreparationCoordinator();
 const deferredDesktopQuitIntent = makeDeferredDesktopQuitIntentCoordinator();
 const runningChatsQuitGuard = makeRunningChatsQuitGuard();
+let nativeQuitConfirmationPromise: Promise<boolean> | null = null;
 let desktopShutdownPromise: Promise<void> | null = null;
 let desktopStartupBlockedForDatabaseRestore = false;
 const migrationConsentHandoff = new MigrationConsentHandoff();
@@ -4457,25 +4458,41 @@ function handleBackendStartupBlock(block: BackendStartupBlock): void {
 
     const processDetail =
       block.ownerPid === null
-        ? "Another Synara server is already using this database."
+        ? "Synara could not verify the database lock. The lock may be left over from an interrupted startup, or another server may still be using it."
         : `Another Synara server (process ${block.ownerPid}) is already using this database.`;
-    const result = await showBlockDialog({
-      type: "warning",
-      title: "Synara is already running elsewhere",
-      message: "Your local Synara data is in use by another process.",
-      detail: `${processDetail}\n\nStop the other Synara app or development server, then try again. Your data has not been changed.`,
-      buttons: ["Try again", "Quit"],
-      defaultId: 0,
-      cancelId: 1,
-      noLink: true,
-    });
-    if (result.response === 0) {
-      // Let a fast failed retry present the block again instead of racing this
-      // dialog task's finalizer and leaving the window inert.
-      backendLifecycleDialogInFlight = null;
-      await restartBackendAfterCrash("database lifecycle lock retry", "lifecycle");
-    } else {
-      requestGracefulAppQuit("database lifecycle lock");
+    for (;;) {
+      const result = await showBlockDialog({
+        type: "warning",
+        title:
+          block.ownerPid === null
+            ? "Synara could not verify database ownership"
+            : "Synara is already running elsewhere",
+        message:
+          block.ownerPid === null
+            ? "Synara could not safely open your local data."
+            : "Your local Synara data is in use by another process.",
+        detail:
+          `${processDetail}\n\nClose any other Synara app or development server using this data, then try again. ` +
+          "If this keeps happening, open the logs to see the underlying lock error. Your data has not been changed.\n\n" +
+          `Log file:\n${Path.join(LOG_DIR, BACKEND_LOG_FILE_NAME)}`,
+        buttons: ["Try again", "Open logs", "Quit"],
+        defaultId: 0,
+        cancelId: 2,
+        noLink: true,
+      });
+      if (result.response === 1) {
+        await openDesktopLogDirectory();
+        continue;
+      }
+      if (result.response === 0) {
+        // Let a fast failed retry present the block again instead of racing this
+        // dialog task's finalizer and leaving the window inert.
+        backendLifecycleDialogInFlight = null;
+        await restartBackendAfterCrash("database lifecycle lock retry", "lifecycle");
+      } else {
+        requestGracefulAppQuit("database lifecycle lock");
+      }
+      return;
     }
   })().finally(() => {
     if (backendLifecycleDialogInFlight === task) {
@@ -4872,6 +4889,18 @@ async function confirmRunningChatsThenQuit(reason: string): Promise<void> {
   }
 
   const window = mainWindow;
+  if (!isMainRendererAvailable()) {
+    nativeQuitConfirmationPromise ??= showDesktopConfirmDialog(`Quit ${APP_DISPLAY_NAME}?`, null)
+      .catch((error) => {
+        console.warn("[desktop] Failed to confirm app quit", error);
+        return false;
+      })
+      .finally(() => {
+        nativeQuitConfirmationPromise = null;
+      });
+    if (await nativeQuitConfirmationPromise) requestGracefulAppQuit(reason);
+    return;
+  }
   const presentation = quitConfirmationPresentationForPlatform();
   const allowed = await runningChatsQuitGuard.askRenderer({
     send: (request) => {
@@ -5722,6 +5751,17 @@ function createWindow(): BrowserWindow {
   window.on("unmaximize", () => emitDesktopWindowState(window));
   window.on("enter-full-screen", () => emitDesktopWindowState(window));
   window.on("leave-full-screen", () => emitDesktopWindowState(window));
+  if (process.platform === "darwin") {
+    guardDesktopWindowClose(
+      window,
+      `Close the ${APP_DISPLAY_NAME} window?`,
+      () =>
+        !isQuitting &&
+        !desktopShutdownComplete &&
+        !isUpdaterQuitAndInstallInFlight &&
+        !isUpdaterInstallPreparing,
+    );
+  }
   window.on("close", (event) => {
     try {
       writeDesktopWindowState(DESKTOP_WINDOW_STATE_PATH, {
