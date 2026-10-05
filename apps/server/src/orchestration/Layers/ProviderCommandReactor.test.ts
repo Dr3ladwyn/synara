@@ -2500,6 +2500,117 @@ describe("ProviderCommandReactor", () => {
       },
     );
 
+    it("fences a Continue interrupted before cache worker registration", async () => {
+      const cancelDiscovery = vi.fn(() => Effect.void);
+      const { harness } = await createCompactionHarness(cancelDiscovery);
+      const review = await sendHeldMessage(harness);
+      const sequence = (await Effect.runPromise(harness.engine.getEventHighWaterSequence)) + 2;
+      const entered = Deferred.makeUnsafe<void>();
+      const release = Deferred.makeUnsafe<void>();
+      const readDelivery = harness.deliveryRepository.getDelivery;
+      let gated = false;
+      Object.assign(harness.deliveryRepository, {
+        getDelivery: (input: Parameters<typeof readDelivery>[0]) => {
+          if (input.eventSequence !== sequence || gated) return readDelivery(input);
+          gated = true;
+          return Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.andThen(readDelivery(input)),
+          );
+        },
+      });
+      try {
+        await Effect.runPromise(
+          harness.engine.dispatch({
+            type: "thread.claude-cache.respond",
+            commandId: CommandId.makeUnsafe("cmd-gap-continue"),
+            threadId: ThreadId.makeUnsafe("thread-1"),
+            reviewId: review.reviewId,
+            messageId: review.messageId,
+            decision: "continue",
+            createdAt: new Date().toISOString(),
+          }),
+        );
+        await Effect.runPromise(Deferred.await(entered));
+        await Effect.runPromise(
+          harness.engine.dispatch({
+            type: "thread.turn.interrupt",
+            commandId: CommandId.makeUnsafe("cmd-gap-interrupt"),
+            threadId: ThreadId.makeUnsafe("thread-1"),
+            createdAt: new Date().toISOString(),
+          }),
+        );
+        await waitFor(() => cancelDiscovery.mock.calls.length === 1);
+      } finally {
+        await Effect.runPromise(Deferred.succeed(release, undefined));
+      }
+      await harness.drain();
+      expect(harness.sendTurn).not.toHaveBeenCalled();
+    });
+
+    it.each(["model", "runtime", "handoff"] as const)(
+      "preserves the session during same-thread %s reconfiguration with a cache worker",
+      async (change) => {
+        const { harness, getClaudeCacheObservation, startClaudeCompaction } =
+          await createCompactionHarness();
+        const review = await sendHeldMessage(harness);
+        const releaseObservation = Deferred.makeUnsafe<void>();
+        getClaudeCacheObservation.mockImplementationOnce(() =>
+          Deferred.await(releaseObservation).pipe(Effect.as(review.assessment)),
+        );
+        try {
+          await Effect.runPromise(
+            harness.engine.dispatch({
+              type: "thread.claude-cache.respond",
+              commandId: CommandId.makeUnsafe("cmd-reconfigure-compact"),
+              threadId: ThreadId.makeUnsafe("thread-1"),
+              reviewId: review.reviewId,
+              messageId: review.messageId,
+              decision: "compact",
+              createdAt: new Date().toISOString(),
+            }),
+          );
+          await waitFor(() => getClaudeCacheObservation.mock.calls.length === 2);
+          const update = await Effect.runPromise(
+            harness.engine.dispatch(
+              change !== "runtime"
+                ? {
+                    type: "thread.meta.update",
+                    commandId: CommandId.makeUnsafe("cmd-change-provider-during-compaction"),
+                    threadId: ThreadId.makeUnsafe("thread-1"),
+                    modelSelection: { provider: "codex", model: "gpt-5-codex" },
+                    ...(change === "handoff" ? { providerHandoff: true } : {}),
+                  }
+                : {
+                    type: "thread.runtime-mode.set",
+                    commandId: CommandId.makeUnsafe("cmd-change-runtime-during-compaction"),
+                    threadId: ThreadId.makeUnsafe("thread-1"),
+                    runtimeMode: "full-access",
+                    createdAt: new Date().toISOString(),
+                  },
+            ),
+          );
+          await waitFor(async () => {
+            const state = await Effect.runPromise(
+              harness.deliveryRepository.getConsumerState(PROVIDER_COMMAND_REACTOR_CONSUMER),
+            );
+            return state.pipe(Option.getOrThrow).lastAckedSequence >= update.sequence;
+          });
+          expect(harness.startSession).toHaveBeenCalledTimes(1);
+          expect(harness.stopSession).not.toHaveBeenCalled();
+          if (change === "handoff") {
+            expect((await readHarnessThread(harness))?.activities).toContainEqual(
+              expect.objectContaining({ kind: "provider.handoff.failed" }),
+            );
+          }
+        } finally {
+          await Effect.runPromise(Deferred.succeed(releaseObservation, undefined));
+        }
+        await harness.drain();
+        expect(startClaudeCompaction).toHaveBeenCalledTimes(1);
+      },
+    );
+
     it("keeps an operator retried slow cache response alive beyond the command deadline", async () => {
       const { harness, startClaudeCompaction } = await createCompactionHarness(
         undefined,

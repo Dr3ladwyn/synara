@@ -3359,6 +3359,23 @@ const make = Effect.gen(function* () {
     };
     const sendQueuedProviderTurn = (messageText: string | undefined) =>
       Effect.gen(function* () {
+        if (input.acceptedCacheReview && input.completionEventSequence !== undefined) {
+          const response = pendingClaudeCacheResponses.get(input.completionEventSequence);
+          if (response) {
+            yield* cancelClaudeCompactionFromJournal(
+              input.threadId,
+              input.completionEventSequence,
+              response.cancelled,
+            );
+            if (yield* Deferred.isDone(response.cancelled)) {
+              return yield* new ProviderAdapterValidationError({
+                provider: selectedProvider,
+                operation: "thread.turn.start",
+                issue: "The saved send was cancelled before delivery.",
+              });
+            }
+          }
+        }
         if (
           input.acceptedCacheReview &&
           !(yield* isClaudeReviewAuthorized(
@@ -6427,6 +6444,17 @@ const make = Effect.gen(function* () {
       // writes and advances past a handoff that the client can never settle.
       timeout: Duration.millis(Duration.toMillis(commandEventTimeout) * 0.9),
       call: Effect.gen(function* () {
+        if (
+          Array.from(pendingClaudeCacheResponses.values()).some(
+            (response) => response.threadId === input.threadId,
+          )
+        ) {
+          return yield* new ProviderAdapterValidationError({
+            provider: input.sourceModelSelection.provider,
+            operation: "thread.meta.update",
+            issue: "Finish or cancel the saved Claude send before handing this thread off.",
+          });
+        }
         // A settled foreground turn may still share its runtime with background
         // tasks. Keep that owner alive until its tasks finish or are stopped.
         if (
@@ -6743,7 +6771,12 @@ const make = Effect.gen(function* () {
             return;
           }
 
-          if (thread.session.activeTurnId !== null) {
+          if (
+            thread.session.activeTurnId !== null ||
+            Array.from(pendingClaudeCacheResponses.values()).some(
+              (response) => response.threadId === event.payload.threadId,
+            )
+          ) {
             // The current runtime still owns the previous spawn profile. The
             // projected thread now carries the desired selection; compare them
             // when the next turn ensures the session.
@@ -6765,9 +6798,14 @@ const make = Effect.gen(function* () {
           if (!thread?.session || thread.session.status === "stopped") {
             return;
           }
-          if (thread.session.activeTurnId !== null) {
-            // Ensuring now would restart the provider session and kill the
-            // in-flight turn. The projected thread already carries the desired
+          if (
+            thread.session.activeTurnId !== null ||
+            Array.from(pendingClaudeCacheResponses.values()).some(
+              (response) => response.threadId === event.payload.threadId,
+            )
+          ) {
+            // Ensuring now would restart the provider session and invalidate
+            // the active turn or cache worker's reviewed context. The projected thread already carries the desired
             // runtime mode; the next turn's ensure compares it against the
             // session's spawn mode and restarts between turns instead.
             return;
@@ -7304,22 +7342,45 @@ const make = Effect.gen(function* () {
             cacheResponse &&
             event.type === "thread.claude-cache-response-requested" &&
             event.payload.decision === "continue"
-              ? processDomainEvent(event).pipe(
-                  Effect.raceFirst(
-                    Deferred.await(cacheResponse.cancelled).pipe(
-                      // Controls or prompt enqueue may already have reached the
-                      // provider. Cancellation releases the lease for Stop, but
-                      // must not manufacture proof that the send was rejected.
-                      Effect.andThen(
-                        Effect.die(
-                          new Error(
-                            "The saved send was interrupted before acceptance could be confirmed.",
+              ? Effect.gen(function* () {
+                  yield* cancelClaudeCompactionFromJournal(
+                    event.payload.threadId,
+                    event.sequence,
+                    cacheResponse.cancelled,
+                  );
+                  if (yield* Deferred.isDone(cacheResponse.cancelled)) {
+                    yield* setClaudeCacheReview(
+                      event.payload.threadId,
+                      {
+                        ...event.payload.review,
+                        status: "failed",
+                        error: "The saved send was cancelled before delivery.",
+                      },
+                      event.payload.review.reviewId,
+                    );
+                    return yield* new ProviderAdapterValidationError({
+                      provider: "claudeAgent",
+                      operation: "thread.turn.start",
+                      issue: "The saved send was cancelled before delivery.",
+                    });
+                  }
+                  return yield* processDomainEvent(event).pipe(
+                    Effect.raceFirst(
+                      Deferred.await(cacheResponse.cancelled).pipe(
+                        // Controls or prompt enqueue may already have reached the
+                        // provider. Cancellation releases the lease for Stop, but
+                        // must not manufacture proof that the send was rejected.
+                        Effect.andThen(
+                          Effect.die(
+                            new Error(
+                              "The saved send was interrupted before acceptance could be confirmed.",
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                )
+                  );
+                })
               : processDomainEvent(event),
         });
         if (workerResult._tag === "timeout") {

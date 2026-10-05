@@ -61,6 +61,11 @@ the delivery stays inflight until its actual result is persisted. Startup recove
 responses even when their sequence is behind that cursor, without replaying an ambiguous send.
 Stop and other cancellation commands can interrupt a pending follow-up; an interrupted send whose
 acceptance cannot be proven still requires reconciliation rather than automatic replay.
+Continue checks the cancellation journal before starting its worker and immediately before enqueue,
+including interrupts, rollback, and edited resends that arrived before live cancellation registration.
+Same-thread model and runtime changes remain projected but defer session reconfiguration while the
+cache worker owns it. An explicit handoff reports failure until that saved operation finishes or is
+cancelled, preserving its reviewed session and providing a settled handoff outcome.
 An operator-authorized safe retry uses the same reactor-owned worker. Reconciliation waits for its
 receipt outside the ordered source lock, so a slow retry does not block other tasks or inherit the
 ordinary command deadline.
