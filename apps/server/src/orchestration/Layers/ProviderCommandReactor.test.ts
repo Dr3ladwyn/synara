@@ -2500,6 +2500,121 @@ describe("ProviderCommandReactor", () => {
       },
     );
 
+    it.each(["expired", "safely-retryable"] as const)(
+      "does not send a cancelled Continue when recovering a %s inflight claim",
+      async (settlement) => {
+        const observation = expiredCacheObservation();
+        const harness = await createCacheHarness(() => observation, false);
+        const threadId = ThreadId.makeUnsafe("thread-1");
+        const now = new Date().toISOString();
+        const source = await dispatchHarnessUserTurn(harness, {
+          messageId: "cancelled-recovery-message",
+          text: "Do not send after recovery cancellation",
+          createdAt: now,
+        });
+        const review = {
+          reviewId: "cancelled-recovery-review",
+          messageId: asMessageId("cancelled-recovery-message"),
+          sourceEventSequence: source.sequence,
+          assessment: observation,
+          status: "pending" as const,
+          createdAt: now,
+        };
+        await Effect.runPromise(
+          harness.engine.dispatch({
+            type: "thread.claude-cache.set",
+            commandId: CommandId.makeUnsafe("cmd-recovery-review"),
+            threadId,
+            review,
+            expectedReviewId: null,
+            createdAt: now,
+          }),
+        );
+        await Effect.runPromise(
+          harness.deliveryRepository.claim({
+            consumerName: PROVIDER_COMMAND_REACTOR_CONSUMER,
+            eventSequence: source.sequence,
+            threadId,
+            claimOwner: "previous-process",
+            claimedAt: now,
+            claimExpiresAt: now,
+          }),
+        );
+        await Effect.runPromise(
+          harness.deliveryRepository.complete({
+            consumerName: PROVIDER_COMMAND_REACTOR_CONSUMER,
+            eventSequence: source.sequence,
+            claimOwner: "previous-process",
+            completedAt: now,
+          }),
+        );
+        const response = await Effect.runPromise(
+          harness.engine.dispatch({
+            type: "thread.claude-cache.respond",
+            commandId: CommandId.makeUnsafe("cmd-recovery-continue"),
+            threadId,
+            reviewId: review.reviewId,
+            messageId: review.messageId,
+            decision: "continue",
+            createdAt: now,
+          }),
+        );
+        await Effect.runPromise(
+          harness.deliveryRepository.claim({
+            consumerName: PROVIDER_COMMAND_REACTOR_CONSUMER,
+            eventSequence: response.sequence,
+            threadId,
+            claimOwner: "previous-process",
+            claimedAt: now,
+            claimExpiresAt:
+              settlement === "expired" ? now : new Date(Date.now() + 1_000).toISOString(),
+          }),
+        );
+        await Effect.runPromise(
+          harness.engine.dispatch({
+            type: "thread.turn.interrupt",
+            commandId: CommandId.makeUnsafe("cmd-recovery-interrupt"),
+            threadId,
+            createdAt: now,
+          }),
+        );
+        const getDelivery = harness.deliveryRepository.getDelivery;
+        let reads = 0;
+        Object.assign(harness.deliveryRepository, {
+          getDelivery: (input: Parameters<typeof getDelivery>[0]) => {
+            if (input.eventSequence === response.sequence) reads++;
+            return getDelivery(input);
+          },
+        });
+        const starting = harness.startReactor();
+        if (settlement === "safely-retryable") {
+          await waitFor(() => reads >= 3);
+          const requeued = await Effect.runPromise(
+            harness.deliveryRepository.markRetryable({
+              consumerName: PROVIDER_COMMAND_REACTOR_CONSUMER,
+              eventSequence: response.sequence,
+              expectedClaimOwner: "previous-process",
+              error: "Prior owner confirmed pre-dispatch rejection",
+              updatedAt: new Date().toISOString(),
+            }),
+          );
+          expect(requeued).toBe(true);
+        }
+        await starting;
+        await harness.drain();
+        expect(harness.sendTurn).not.toHaveBeenCalled();
+        const delivery = await Effect.runPromise(
+          getDelivery({
+            consumerName: PROVIDER_COMMAND_REACTOR_CONSUMER,
+            eventSequence: response.sequence,
+          }),
+        );
+        expect(delivery.pipe(Option.getOrThrow).state).toBe(
+          settlement === "expired" ? "uncertain" : "succeeded",
+        );
+      },
+    );
+
     it("fences a Continue interrupted before cache worker registration", async () => {
       const cancelDiscovery = vi.fn(() => Effect.void);
       const { harness } = await createCompactionHarness(cancelDiscovery);

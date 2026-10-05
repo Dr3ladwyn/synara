@@ -7926,11 +7926,6 @@ const make = Effect.gen(function* () {
           consumerName: PROVIDER_COMMAND_REACTOR_CONSUMER,
           eventSequence: event.sequence,
         });
-        // Settled receipts and a previous process's inflight claim must finish
-        // recovery before the startup compaction scan classifies their evidence.
-        if (Option.isSome(existing) && existing.value.state !== "retry") {
-          return yield* work;
-        }
         const response = {
           threadId: event.payload.threadId,
           admitted: yield* Deferred.make<void, unknown>(),
@@ -7938,10 +7933,18 @@ const make = Effect.gen(function* () {
           settled: yield* Deferred.make<void, unknown>(),
         };
         pendingClaudeCacheResponses.set(event.sequence, response);
-        yield* work.pipe(
+        const delivery = work.pipe(
           Effect.onExit((exit) => Deferred.done(response.admitted, exit)),
           Effect.ensuring(Effect.sync(() => pendingClaudeCacheResponses.delete(event.sequence))),
           Effect.onExit((exit) => Deferred.done(response.settled, exit)),
+        );
+        // Recovery still finishes before the startup compaction scan. Register
+        // its cancellation state too: another owner's inflight claim can become
+        // safely retryable while recovery waits, then reach provider dispatch.
+        if (Option.isSome(existing) && existing.value.state !== "retry") {
+          return yield* delivery;
+        }
+        yield* delivery.pipe(
           Effect.catchCause((cause) =>
             Cause.hasInterruptsOnly(cause)
               ? Effect.failCause(cause)

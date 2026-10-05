@@ -59,6 +59,9 @@ deadline. Slow compaction or a slow follow-up therefore does not become an uncer
 because time elapsed, and other tasks can still send. Advancing the source cursor is only admission;
 the delivery stays inflight until its actual result is persisted. Startup recovers unfinished cache
 responses even when their sequence is behind that cursor, without replaying an ambiguous send.
+Recovery registers the same cancellation state while awaiting an earlier owner's inflight claim,
+so a claim that becomes safely retryable still observes later cancellation. Lease expiry alone
+continues to leave ambiguous saved-message delivery uncertain; cancellation does not prove rejection.
 Stop and other cancellation commands can interrupt a pending follow-up; an interrupted send whose
 acceptance cannot be proven still requires reconciliation rather than automatic replay.
 Continue checks the cancellation journal before starting its worker and immediately before enqueue,
