@@ -926,6 +926,7 @@ const make = Effect.gen(function* () {
       readonly threadId: ThreadId;
       readonly admitted: Deferred.Deferred<void, unknown>;
       readonly cancelled: Deferred.Deferred<void>;
+      readonly settled: Deferred.Deferred<void, unknown>;
     }
   >();
   let reconcileDeliveryRuntime: ProviderCommandReactorShape["reconcileDelivery"] | undefined;
@@ -6947,6 +6948,7 @@ const make = Effect.gen(function* () {
   // claims settle before cursor advancement. Cache responses retain inflight
   // claims outside the source, so startup also recovers them behind the cursor.
   const startProviderIntentSource = Effect.gen(function* () {
+    const providerIntentScope = yield* Effect.scope;
     {
       // Cancellation intents can be queued behind discovery under the ordered
       // delivery lock. Observe their local cancellation signal independently;
@@ -7553,116 +7555,145 @@ const make = Effect.gen(function* () {
     });
 
     reconcileDeliveryRuntime = (input) =>
-      Effect.scoped(
-        deliverySourceLock.withPermits(1)(
-          Effect.gen(function* () {
-            const reconciledAt = new Date().toISOString();
-            const delivery = yield* deliveryRepository.getDelivery({
-              consumerName: PROVIDER_COMMAND_REACTOR_CONSUMER,
-              eventSequence: input.eventSequence,
-            });
-            if (
-              Option.isNone(delivery) ||
-              delivery.value.threadId !== input.threadId ||
-              delivery.value.state !== input.expectedState
-            )
-              return null;
-            const reconciledEvent = yield* readProviderIntentEvent(input.eventSequence);
-            const review =
-              reconciledEvent.type === "thread.claude-cache-response-requested"
-                ? (yield* resolveThread(reconciledEvent.payload.threadId))?.claudeCacheReview
-                : undefined;
-            const abandonsCompaction =
-              input.outcome === "abandon" &&
-              reconciledEvent.type === "thread.claude-cache-response-requested" &&
-              reconciledEvent.payload.decision === "compact" &&
-              review?.reviewId === reconciledEvent.payload.review.reviewId &&
-              review.compactionResponseEventSequence === input.eventSequence &&
-              review.compactionTurnId !== undefined;
-            if (abandonsCompaction) {
-              // Persist the hold before removing its delivery blocker. If the
-              // process exits between writes, startup can finish reconciliation.
-              yield* setClaudeCacheReview(
-                reconciledEvent.payload.threadId,
-                { ...review, status: "failed", error: LOST_CLAUDE_COMPACTION_ERROR },
-                review.reviewId,
-              );
-            }
-            const reconciled = yield* deliveryRepository.reconcile({
-              reconciliationId: crypto.randomUUID(),
-              consumerName: PROVIDER_COMMAND_REACTOR_CONSUMER,
-              eventSequence: input.eventSequence,
-              threadId: input.threadId,
-              expectedState: input.expectedState,
-              outcome: input.outcome,
-              reconciledBy: input.reconciledBy,
-              ...(input.note === undefined ? {} : { note: input.note }),
-              reconciledAt,
-            });
-            if (Option.isNone(reconciled)) return null;
-
-            if (reconciledEvent.type === "thread.claude-cache-response-requested") {
-              const review = (yield* resolveThread(reconciledEvent.payload.threadId))
-                ?.claudeCacheReview;
-              if (
-                review?.reviewId === reconciledEvent.payload.review.reviewId &&
-                !abandonsCompaction &&
-                !(
-                  input.outcome === "accepted" &&
-                  reconciledEvent.payload.decision === "compact" &&
-                  review.compactionTurnId
-                )
-              ) {
-                yield* setClaudeCacheReview(
-                  reconciledEvent.payload.threadId,
-                  input.outcome === "safe_retry"
-                    ? { ...review, status: "responding", error: undefined }
-                    : null,
-                  review.reviewId,
-                );
-              }
-            }
-
-            if (input.outcome === "safe_retry") {
-              yield* resumeRetryableDelivery(input);
-            } else {
-              quarantinedThreads.delete(input.threadId);
-              const currentReview = (yield* resolveThread(input.threadId))?.claudeCacheReview;
-              const revokedCompaction =
-                reconciledEvent.type === "thread.claude-cache-response-requested" &&
-                reconciledEvent.payload.decision === "compact" &&
-                currentReview?.reviewId !== reconciledEvent.payload.review.reviewId;
-              // Settling a cancelled control is not permission to retry other
-              // sends that were rejected while this thread was quarantined.
-              if (!revokedCompaction) {
-                yield* replayQuarantinedThreadSideEffects({
-                  threadId: input.threadId,
-                  afterSequence: input.eventSequence,
+      Effect.suspend(() => {
+        let awaitCacheRetry: Effect.Effect<void, unknown> = Effect.void;
+        return Effect.scoped(
+          deliverySourceLock
+            .withPermits(1)(
+              Effect.gen(function* () {
+                const reconciledAt = new Date().toISOString();
+                const delivery = yield* deliveryRepository.getDelivery({
+                  consumerName: PROVIDER_COMMAND_REACTOR_CONSUMER,
+                  eventSequence: input.eventSequence,
                 });
-              }
-            }
+                if (
+                  Option.isNone(delivery) ||
+                  delivery.value.threadId !== input.threadId ||
+                  delivery.value.state !== input.expectedState
+                )
+                  return null;
+                const reconciledEvent = yield* readProviderIntentEvent(input.eventSequence);
+                const review =
+                  reconciledEvent.type === "thread.claude-cache-response-requested"
+                    ? (yield* resolveThread(reconciledEvent.payload.threadId))?.claudeCacheReview
+                    : undefined;
+                const abandonsCompaction =
+                  input.outcome === "abandon" &&
+                  reconciledEvent.type === "thread.claude-cache-response-requested" &&
+                  reconciledEvent.payload.decision === "compact" &&
+                  review?.reviewId === reconciledEvent.payload.review.reviewId &&
+                  review.compactionResponseEventSequence === input.eventSequence &&
+                  review.compactionTurnId !== undefined;
+                if (abandonsCompaction) {
+                  // Persist the hold before removing its delivery blocker. If the
+                  // process exits between writes, startup can finish reconciliation.
+                  yield* setClaudeCacheReview(
+                    reconciledEvent.payload.threadId,
+                    { ...review, status: "failed", error: LOST_CLAUDE_COMPACTION_ERROR },
+                    review.reviewId,
+                  );
+                }
+                const reconciled = yield* deliveryRepository.reconcile({
+                  reconciliationId: crypto.randomUUID(),
+                  consumerName: PROVIDER_COMMAND_REACTOR_CONSUMER,
+                  eventSequence: input.eventSequence,
+                  threadId: input.threadId,
+                  expectedState: input.expectedState,
+                  outcome: input.outcome,
+                  reconciledBy: input.reconciledBy,
+                  ...(input.note === undefined ? {} : { note: input.note }),
+                  reconciledAt,
+                });
+                if (Option.isNone(reconciled)) return null;
 
-            const finalDelivery = yield* deliveryRepository.getDelivery({
-              consumerName: PROVIDER_COMMAND_REACTOR_CONSUMER,
-              eventSequence: input.eventSequence,
-            });
-            if (Option.isNone(finalDelivery) || finalDelivery.value.state === "inflight") {
-              return yield* Effect.die(
-                new Error(
-                  `Provider delivery ${input.eventSequence} did not reach a reconciled state`,
-                ),
-              );
-            }
-            return {
-              eventSequence: input.eventSequence,
-              threadId: input.threadId,
-              outcome: input.outcome,
-              state: finalDelivery.value.state,
-              reconciledAt,
-            };
-          }),
-        ),
-      ) as ReturnType<ProviderCommandReactorShape["reconcileDelivery"]>;
+                if (reconciledEvent.type === "thread.claude-cache-response-requested") {
+                  const review = (yield* resolveThread(reconciledEvent.payload.threadId))
+                    ?.claudeCacheReview;
+                  if (
+                    review?.reviewId === reconciledEvent.payload.review.reviewId &&
+                    !abandonsCompaction &&
+                    !(
+                      input.outcome === "accepted" &&
+                      reconciledEvent.payload.decision === "compact" &&
+                      review.compactionTurnId
+                    )
+                  ) {
+                    yield* setClaudeCacheReview(
+                      reconciledEvent.payload.threadId,
+                      input.outcome === "safe_retry"
+                        ? { ...review, status: "responding", error: undefined }
+                        : null,
+                      review.reviewId,
+                    );
+                  }
+                }
+
+                if (input.outcome === "safe_retry") {
+                  if (reconciledEvent.type === "thread.claude-cache-response-requested") {
+                    const previousWorker = pendingClaudeCacheResponses.get(input.eventSequence);
+                    if (previousWorker)
+                      yield* Deferred.await(previousWorker.settled).pipe(Effect.ignore);
+                    const settled = yield* Deferred.make<void, unknown>();
+                    awaitCacheRetry = Deferred.await(settled);
+                    yield* runClaudeCacheResponseDelivery(
+                      reconciledEvent,
+                      resumeRetryableDelivery(input).pipe(
+                        Effect.onExit((exit) => Deferred.done(settled, exit)),
+                      ),
+                    ).pipe(Scope.provide(providerIntentScope));
+                  } else {
+                    yield* resumeRetryableDelivery(input);
+                  }
+                } else {
+                  quarantinedThreads.delete(input.threadId);
+                  const currentReview = (yield* resolveThread(input.threadId))?.claudeCacheReview;
+                  const revokedCompaction =
+                    reconciledEvent.type === "thread.claude-cache-response-requested" &&
+                    reconciledEvent.payload.decision === "compact" &&
+                    currentReview?.reviewId !== reconciledEvent.payload.review.reviewId;
+                  // Settling a cancelled control is not permission to retry other
+                  // sends that were rejected while this thread was quarantined.
+                  if (!revokedCompaction) {
+                    yield* replayQuarantinedThreadSideEffects({
+                      threadId: input.threadId,
+                      afterSequence: input.eventSequence,
+                    });
+                  }
+                }
+
+                return reconciledAt;
+              }),
+            )
+            .pipe(
+              Effect.flatMap((reconciledAt) =>
+                Effect.gen(function* () {
+                  if (reconciledAt === null) return null;
+                  // The retry belongs to the reactor scope. Wait for its receipt outside
+                  // the source permit so other chats and cancellation controls can run.
+                  yield* awaitCacheRetry;
+                  const finalDelivery = yield* deliveryRepository.getDelivery({
+                    consumerName: PROVIDER_COMMAND_REACTOR_CONSUMER,
+                    eventSequence: input.eventSequence,
+                  });
+                  if (Option.isNone(finalDelivery) || finalDelivery.value.state === "inflight") {
+                    return yield* Effect.die(
+                      new Error(
+                        `Provider delivery ${input.eventSequence} did not reach a reconciled state`,
+                      ),
+                    );
+                  }
+                  return {
+                    eventSequence: input.eventSequence,
+                    threadId: input.threadId,
+                    outcome: input.outcome,
+                    state: finalDelivery.value.state,
+                    reconciledAt,
+                  };
+                }),
+              ),
+            ),
+        );
+      }) as ReturnType<ProviderCommandReactorShape["reconcileDelivery"]>;
 
     const countSkippedPrompts = (input: {
       readonly threadId: ThreadId;
@@ -7843,11 +7874,13 @@ const make = Effect.gen(function* () {
           threadId: event.payload.threadId,
           admitted: yield* Deferred.make<void, unknown>(),
           cancelled: yield* Deferred.make<void>(),
+          settled: yield* Deferred.make<void, unknown>(),
         };
         pendingClaudeCacheResponses.set(event.sequence, response);
         yield* work.pipe(
           Effect.onExit((exit) => Deferred.done(response.admitted, exit)),
           Effect.ensuring(Effect.sync(() => pendingClaudeCacheResponses.delete(event.sequence))),
+          Effect.onExit((exit) => Deferred.done(response.settled, exit)),
           Effect.catchCause((cause) =>
             Cause.hasInterruptsOnly(cause)
               ? Effect.failCause(cause)

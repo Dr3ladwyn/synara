@@ -2500,6 +2500,76 @@ describe("ProviderCommandReactor", () => {
       },
     );
 
+    it("keeps an operator retried slow cache response alive beyond the command deadline", async () => {
+      const { harness, startClaudeCompaction } = await createCompactionHarness(
+        undefined,
+        false,
+        Duration.millis(100),
+      );
+      const review = await sendHeldMessage(harness);
+      startClaudeCompaction.mockImplementationOnce(() =>
+        Effect.fail(
+          new ProviderSessionDirectoryPersistenceError({
+            operation: "startClaudeCompaction.persist",
+            detail: "Accepted but persistence failed",
+            cause: new PersistenceSqlError({
+              operation: "persistCompaction",
+              detail: "SQL unavailable",
+            }),
+          }),
+        ),
+      );
+      await respondToReview(harness, review, "compact");
+      const uncertain = (await readHarnessThread(harness))!.claudeCacheReview!;
+      const release = Deferred.makeUnsafe<void>();
+      startClaudeCompaction.mockImplementation((input) =>
+        Deferred.await(release).pipe(Effect.as(input)),
+      );
+      const retry = Effect.runPromise(
+        harness.reactor.reconcileDelivery({
+          threadId: ThreadId.makeUnsafe("thread-1"),
+          eventSequence: uncertain.compactionResponseEventSequence!,
+          expectedState: "uncertain",
+          outcome: "safe_retry",
+          reconciledBy: "operator-confirmed-never-executed",
+        }),
+      );
+      try {
+        await waitFor(() => startClaudeCompaction.mock.calls.length === 2);
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        expect((await readHarnessThread(harness))?.claudeCacheReview?.status).toBe("compacting");
+        const threadId = ThreadId.makeUnsafe("thread-during-retried-compaction");
+        await Effect.runPromise(
+          harness.engine.dispatch({
+            type: "thread.create",
+            commandId: CommandId.makeUnsafe("cmd-create-during-retried-compaction"),
+            threadId,
+            projectId: asProjectId("project-1"),
+            title: "Independent chat",
+            modelSelection: { provider: "codex", model: "gpt-5-codex" },
+            interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+            runtimeMode: "approval-required",
+            branch: null,
+            worktreePath: null,
+            createdAt: new Date().toISOString(),
+          }),
+        );
+        await dispatchHarnessUserTurn(harness, {
+          threadId,
+          messageId: "during-retried-compaction",
+          text: "Work during the operator retry",
+          createdAt: new Date().toISOString(),
+        });
+        await waitFor(() =>
+          harness.sendTurn.mock.calls.some(([input]) => input.threadId === threadId),
+        );
+      } finally {
+        await Effect.runPromise(Deferred.succeed(release, undefined));
+        await retry;
+      }
+      await harness.drain();
+    });
+
     it.each(["compaction", "follow-up", "cancel-follow-up"] as const)(
       "keeps slow %s alive beyond the command deadline while another chat sends",
       async (phase) => {
