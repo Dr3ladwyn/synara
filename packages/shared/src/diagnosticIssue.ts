@@ -4,7 +4,11 @@ import type { DesktopDiagnosticIssue } from "@synara/contracts";
 export function diagnosticIssueReason(error: unknown): DesktopDiagnosticIssue["reason"] {
   try {
     const message = typeof error === "string" ? error : error instanceof Error ? error.message : "";
-    if (/unauthorized|authentication|auth.*expired|session expired|sign.?in|\b401\b/i.test(message))
+    if (
+      /unauthorized|authentication|auth.*expired|session expired|\bsign[ -]?in\b|\b401\b/i.test(
+        message,
+      )
+    )
       return "auth";
     if (/json|invalid.*(?:response|transcript)|unexpected token/i.test(message))
       return "invalid-response";
