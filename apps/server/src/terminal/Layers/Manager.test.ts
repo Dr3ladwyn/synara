@@ -25,7 +25,10 @@ import {
 } from "./Manager";
 import type { ManagedTerminalProfile } from "../managedTerminalWrappers";
 import type { ProcessTreeKiller } from "../processTreeKiller";
-import type { ProcessChildrenSnapshotObserver } from "../windowsProcessSnapshot";
+import {
+  createWindowsProcessSnapshotObserver,
+  type ProcessChildrenSnapshotObserver,
+} from "../windowsProcessSnapshot";
 import { Effect, Encoding } from "effect";
 
 class FakePtyProcess implements PtyProcess {
@@ -1248,6 +1251,46 @@ describe("TerminalManager", () => {
       }
     },
   );
+
+  it("does not authorize close with a process snapshot started by an earlier poll", async () => {
+    let finishOldSnapshot!: (
+      snapshot: Map<number, Array<{ pid: number; command: string }>>,
+    ) => void;
+    const oldSnapshot = new Promise<Map<number, Array<{ pid: number; command: string }>>>(
+      (resolve) => {
+        finishOldSnapshot = resolve;
+      },
+    );
+    const capture = vi
+      .fn()
+      .mockReturnValueOnce(oldSnapshot)
+      .mockResolvedValue(new Map([[9000, [{ pid: 9100, command: "node.exe build.js" }]]]));
+    const observer = createWindowsProcessSnapshotObserver({
+      createWorker: () => ({ capture, dispose: () => {} }),
+    });
+    const observe = vi.spyOn(observer, "capture");
+    const { manager, ptyAdapter } = makeManager(5, {
+      processSnapshotObserver: observer,
+      subprocessPollIntervalMs: 60_000,
+    });
+    try {
+      await manager.open(openInput());
+      await waitFor(() => capture.mock.calls.length === 1);
+      const closing = manager.close({
+        threadId: "thread-1",
+        terminalId: "default",
+        onlyIfIdle: true,
+      });
+      const result = expect(closing).rejects.toThrow(/busy/i);
+      await waitFor(() => observe.mock.calls.length >= 2);
+      finishOldSnapshot(new Map());
+      await result;
+      expect(ptyAdapter.processes[0]?.killed).toBe(false);
+    } finally {
+      finishOldSnapshot(new Map());
+      manager.dispose();
+    }
+  });
 
   it("rejects navigation writes to busy shells without sending input", async () => {
     let busy = true;

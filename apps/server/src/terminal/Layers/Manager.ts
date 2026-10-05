@@ -1253,8 +1253,15 @@ export class TerminalManagerRuntime extends EventEmitter<TerminalManagerEvents> 
     if (this.processSnapshotObserver || this.useDefaultSubprocessChecker) {
       // Unlike activity polling, destructive operations cannot fall back to a
       // best-effort probe that treats a failed process lookup as an idle shell.
-      const children = this.processSnapshotObserver
+      // An observer shares an in-flight poll. Drain it first so the snapshot
+      // authorizing this operation was requested after the operation began.
+      const pendingSnapshot = this.processSnapshotObserver
         ? await this.processSnapshotObserver.capture()
+        : undefined;
+      const children = this.processSnapshotObserver
+        ? pendingSnapshot === null
+          ? null
+          : await this.processSnapshotObserver.capture()
         : await captureProcessChildrenMap();
       if (children === null) {
         throw new Error("Unable to verify terminal activity. The terminal was kept open.");
