@@ -37,11 +37,13 @@ export function ComposerClaudeCacheReviewPanel({
   useEffect(() => {
     if (review.status !== "failed" && review.status !== "uncertain") return;
     let disposed = false;
+    const generation = reportGenerationRef.current;
     void reportHandledIssue({
       code: review.status === "failed" ? "claude.cache.failed" : "claude.cache.uncertain",
       reason: diagnosticIssueReason(review.error),
     }).then((id) => {
-      if (!disposed && id) setDiagnostic({ reviewId: review.reviewId, id });
+      if (!disposed && id && reportGenerationRef.current === generation)
+        setDiagnostic({ reviewId: review.reviewId, id });
     });
     return () => {
       disposed = true;

@@ -566,7 +566,7 @@ export class BetaDiagnostics {
         this.getReportStatus(previous.id) !== "unavailable"
       )
         return previous.id;
-      if (!this.allowError(fingerprint)) return null;
+      if (!this.allowError(fingerprint, false)) return null;
       const id = this.track("app.error", {
         kind: "error",
         source,
@@ -577,6 +577,7 @@ export class BetaDiagnostics {
           : { stack: `durationMs=${Math.round(input.durationMs)}` }),
       });
       if (!id) return null;
+      this.allowError(fingerprint);
       this.issueReports.set(fingerprint, { id, at: now });
       this.reportStatuses.set(id, "queued");
       if (this.reportStatuses.size > 128)
@@ -802,7 +803,7 @@ export class BetaDiagnostics {
     }
   }
 
-  private allowError(fingerprint: string): boolean {
+  private allowError(fingerprint: string, record = true): boolean {
     const nowMs = this.now().getTime();
     while (
       this.errorSentTimestamps.length > 0 &&
@@ -813,6 +814,7 @@ export class BetaDiagnostics {
     if (this.errorSentTimestamps.length >= ERROR_HOURLY_CAP) return false;
     const lastSent = this.errorFingerprintSentAt.get(fingerprint);
     if (lastSent !== undefined && nowMs - lastSent < ERROR_FINGERPRINT_WINDOW_MS) return false;
+    if (!record) return true;
     this.errorFingerprintSentAt.set(fingerprint, nowMs);
     if (this.errorFingerprintSentAt.size > 256) {
       for (const [key, sentAt] of this.errorFingerprintSentAt) {

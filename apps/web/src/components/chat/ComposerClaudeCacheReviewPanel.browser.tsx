@@ -158,6 +158,50 @@ describe("ComposerClaudeCacheReviewPanel", () => {
     }
   });
 
+  it("keeps a rejected choice diagnostic when the earlier review report arrives late", async () => {
+    const previousBridge = window.desktopBridge;
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    let resolveEarlier!: (id: string) => void;
+    const earlier = new Promise<string>((resolve) => {
+      resolveEarlier = resolve;
+    });
+    const reportIssue = vi.fn().mockReturnValueOnce(earlier).mockResolvedValue("newer-choice-id");
+    Object.defineProperty(window, "desktopBridge", {
+      configurable: true,
+      value: { betaDiagnostics: { reportIssue, getReportStatus: async () => "queued" } },
+    });
+    const screen = await render(
+      <ComposerClaudeCacheReviewPanel
+        review={makeReview({ status: "failed", error: "Compaction failed" })}
+        compactDisabledReason={null}
+        onRespond={vi.fn().mockRejectedValue(new Error("Choice request failed"))}
+      />,
+    );
+    try {
+      await expect.poll(() => reportIssue.mock.calls.length).toBe(1);
+      await page.getByRole("button", { name: /^Continue with full context/ }).click();
+      await expect.element(page.getByRole("alert")).toHaveTextContent("Choice request failed");
+      await expect
+        .element(page.getByRole("button", { name: "Copy diagnostic ID", exact: true }))
+        .toBeVisible();
+      resolveEarlier("older-review-id");
+      await earlier;
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      await page.getByRole("button", { name: "Copy diagnostic ID", exact: true }).click();
+      expect(writeText).toHaveBeenCalledExactlyOnceWith("newer-choice-id");
+    } finally {
+      resolveEarlier("older-review-id");
+      await screen.unmount();
+      Object.defineProperty(window, "desktopBridge", { configurable: true, value: previousBridge });
+      if (originalClipboard) Object.defineProperty(navigator, "clipboard", originalClipboard);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    }
+  });
+
   it("supports a failed review without offering unavailable compaction", async () => {
     const review = makeReview({ status: "failed", error: "Compaction did not complete." });
     const onRespond = vi.fn(async () => undefined);

@@ -986,7 +986,7 @@ describe("handled issue reports", () => {
     await diagnostics.dispose();
   });
 
-  it("does not offer an ID when the queue cannot be written", async () => {
+  it("offers an ID after a transient queue write failure without consuming its rate limit", async () => {
     const root = makeRoot();
     const diagnostics = makeDiagnostics(root, "http://127.0.0.1:1");
     rmSync(join(root, "diagnostics"), { recursive: true });
@@ -995,6 +995,14 @@ describe("handled issue reports", () => {
       diagnostics.trackIssue("main", { code: "startup.database-locked", reason: "unknown-owner" }),
     ).toBeNull();
     expect(diagnostics.getReportStatus("made-up-id")).toBe("unavailable");
+    rmSync(join(root, "diagnostics"));
+    const id = diagnostics.trackIssue("main", {
+      code: "startup.database-locked",
+      reason: "unknown-owner",
+    });
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(diagnostics.getReportStatus(id)).toBe("queued");
+    expect(JSON.parse(readFileSync(join(root, "diagnostics/events.jsonl"), "utf8")).id).toBe(id);
     await diagnostics.dispose();
   });
 });
