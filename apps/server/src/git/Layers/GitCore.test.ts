@@ -8,7 +8,17 @@ import path from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
-import { Effect, Exit, FileSystem, Layer, PlatformError, Schema, Scope, Stream } from "effect";
+import {
+  Effect,
+  Exit,
+  Fiber,
+  FileSystem,
+  Layer,
+  PlatformError,
+  Schema,
+  Scope,
+  Stream,
+} from "effect";
 import { describe, expect, vi } from "vitest";
 import { TestClock } from "effect/testing";
 
@@ -3236,6 +3246,55 @@ it.layer(TestLayer)("git integration", (it) => {
         releaseFetch();
       }),
     );
+
+    for (const method of ["statusDetails", "readActionStatus"] as const) {
+      it.effect(`bounds ${method} when a filesystem monitor stalls Git status`, () =>
+        Effect.gen(function* () {
+          const tmp = yield* makeTmpDir();
+          yield* initRepoWithCommit(tmp);
+          const hook = path.join(tmp, ".git/hooks/fsmonitor");
+          const started = path.join(tmp, ".git/fsmonitor-started");
+          yield* writeTextFile(
+            hook,
+            "#!/bin/sh\ntouch .git/fsmonitor-started\nwhile :; do sleep 0.05; done\n",
+          );
+          yield* Effect.promise(() => fs.chmod(hook, 0o755));
+          yield* git(tmp, ["config", "core.fsmonitor", hook]);
+          const core = yield* GitCore;
+          const query = yield* core[method](tmp).pipe(
+            Effect.result,
+            Effect.timeoutOption("35 seconds"),
+            Effect.forkChild,
+          );
+          yield* Effect.promise(async () => {
+            const deadline = Date.now() + 5000;
+            while (!existsSync(started)) {
+              if (Date.now() > deadline) throw new Error("Filesystem monitor did not start");
+              await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+          });
+          yield* TestClock.adjust("30 seconds");
+          // Process teardown uses real I/O; let it settle before advancing the
+          // outer guard, which must catch a missing command deadline.
+          yield* Effect.promise(async () => {
+            const deadline = Date.now() + 2000;
+            while (!query.pollUnsafe() && Date.now() < deadline) {
+              await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+          });
+          yield* TestClock.adjust("5 seconds");
+          const result = yield* Fiber.join(query);
+          expect(result._tag).toBe("Some");
+          if (result._tag === "Some") {
+            expect(result.value._tag).toBe("Failure");
+            if (result.value._tag === "Failure") {
+              expect(result.value.failure.command).toContain("git status");
+              expect(result.value.failure.detail).toContain("timed out");
+            }
+          }
+        }),
+      );
+    }
 
     it.effect("prepares commit context by auto-staging and creates commit", () =>
       Effect.gen(function* () {

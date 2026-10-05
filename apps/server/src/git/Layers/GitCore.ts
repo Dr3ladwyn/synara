@@ -980,7 +980,7 @@ export const makeGitCore = (options?: { executeOverride?: GitCoreShape["execute"
       Effect.gen(function* () {
         const records: string[] = [];
         yield* executeGit(operation, cwd, args, {
-          ...GIT_MUTATION_OPTIONS,
+          outputMode: "truncate",
           ...options,
           progress: {
             stdoutLineDelimiter: "\0",
@@ -1749,7 +1749,7 @@ export const makeGitCore = (options?: { executeOverride?: GitCoreShape["execute"
           cwd,
           ["status", "--porcelain=2", "--branch", "-z"],
           {
-            ...GIT_MUTATION_OPTIONS,
+            outputMode: "truncate",
             progress: {
               stdoutLineDelimiter: "\0",
               onStdoutLine: (record) =>
