@@ -359,10 +359,10 @@ describe("ChatTranscriptPane", () => {
       host.style.cssText = `display:flex;width:${width}px;height:520px;--app-chat-max-width:${chatWidth};`;
       document.body.append(host);
 
-      const screen = await render(
+      const transcript = (rightInset: number) => (
         <ChatTranscriptPane
           activeThreadId="thread-hidden-trail"
-          contentInsetRightPx={inset}
+          contentInsetRightPx={rightInset}
           isLocalDraft
           activeTurnInProgress={false}
           activeTurnStartedAt={null}
@@ -436,9 +436,9 @@ describe("ChatTranscriptPane", () => {
           timestampFormat="locale"
           turnDiffSummaryByAssistantMessageId={EMPTY_TURN_DIFFS}
           workspaceRoot={undefined}
-        />,
-        { container: host },
+        />
       );
+      const screen = await render(transcript(inset), { container: host });
       try {
         await vi.waitFor(() => {
           const trail = screen.container.querySelector('nav[aria-label="Message navigation"]');
@@ -466,6 +466,21 @@ describe("ChatTranscriptPane", () => {
           await vi.waitFor(() => expect(rail.getAttribute("aria-hidden")).toBe("true"));
           expect(ticks.every((tick) => tick.tabIndex === -1)).toBe(true);
           expect(getComputedStyle(tooltip).visibility).toBe("hidden");
+          expect(ticks).not.toContain(document.activeElement);
+        } else if (inset > 0) {
+          const rail = screen.container.querySelector('nav[aria-label="Message navigation"]')!;
+          const message = screen.container.querySelector('[data-message-role="assistant"]')!;
+          await settleLayout();
+          await screen.rerender(transcript(0));
+          for (let frame = 0; frame < 20; frame += 1) {
+            await new Promise(requestAnimationFrame);
+            if (rail.getAttribute("aria-hidden") === "false") {
+              expect(message.getBoundingClientRect().left).toBeGreaterThan(
+                rail.getBoundingClientRect().right,
+              );
+            }
+          }
+          await expect.poll(() => rail.getAttribute("aria-hidden")).toBe("false");
         }
       } finally {
         await screen.unmount();

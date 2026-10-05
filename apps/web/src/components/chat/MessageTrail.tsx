@@ -20,6 +20,7 @@ import {
   useState,
   useSyncExternalStore,
   type FocusEvent as ReactFocusEvent,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -504,6 +505,10 @@ export function MessageTrail({
   // Going inert (narrow pane / N<=1): stop the loop and clear transient state.
   useEffect(() => {
     if (!visible) {
+      const activeElement = document.activeElement;
+      if (activeElement instanceof HTMLElement && rootRef.current?.contains(activeElement)) {
+        activeElement.blur();
+      }
       cancelFrame();
       latestPointerClientYRef.current = null;
       focusOverrideIndexRef.current = null;
@@ -651,14 +656,18 @@ export function MessageTrail({
       className={cn(
         "absolute inset-y-0 left-0 z-20 hidden flex-col justify-center sm:flex",
         DISCLOSURE_CONTENT_MOTION_CLASS,
+        "transition-[opacity,translate,--message-trail-content-inset]",
         visible ? "opacity-100" : "pointer-events-none opacity-0",
       )}
-      style={{
-        width: RAIL_WIDTH_PX,
-        // CSS resolves rem, percentage/full-width, and live preference changes.
-        // Observe this constrained box, rather than assuming a fixed 46rem column.
-        maxWidth: `max(0px, calc((100% - var(--app-chat-max-width, 46rem) - ${contentInsetRightPx}px) / 2 - ${RAIL_CONTENT_CLEARANCE_PX}px))`,
-      }}
+      style={
+        {
+          "--message-trail-content-inset": `${contentInsetRightPx}px`,
+          width: RAIL_WIDTH_PX,
+          // CSS resolves rem, percentage/full-width, and live preference changes.
+          // Observe this constrained box, rather than assuming a fixed 46rem column.
+          maxWidth: `max(0px, calc((100% - var(--app-chat-max-width, 46rem) - var(--message-trail-content-inset)) / 2 - ${RAIL_CONTENT_CLEARANCE_PX}px))`,
+        } as CSSProperties
+      }
     >
       {/* Capped, centered, scrollable viewport. `scroll-fade-y` masks the top/bottom
           edges only while there is overflow to scroll (auto-off when it all fits). */}
