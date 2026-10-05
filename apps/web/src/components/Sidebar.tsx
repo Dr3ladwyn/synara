@@ -3635,9 +3635,8 @@ export default function Sidebar() {
             onlyIfIdle: true,
           });
         } catch (error) {
-          if (shouldCreateNewTerminal && !currentTerminalState.hasSession) {
-            terminalStore.closeTerminal(threadId, targetTerminalId);
-          }
+          // Open may already have created a PTY, even if navigation or its
+          // acknowledgement failed. Keep its identity available for reattach.
           terminalStore.setTerminalPresentationMode(threadId, previousPresentationMode);
           terminalStore.setTerminalOpen(threadId, previousTerminalOpen);
           if (previousActiveTerminalId) {
