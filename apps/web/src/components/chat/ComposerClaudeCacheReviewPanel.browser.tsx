@@ -116,6 +116,17 @@ describe("ComposerClaudeCacheReviewPanel", () => {
 
   it("disables every response while the request status is uncertain", async () => {
     const onRespond = vi.fn();
+    const previousBridge = window.desktopBridge;
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const reportIssue = vi.fn(async () => "12345678-1234-4234-8234-123456789012");
+    Object.defineProperty(window, "desktopBridge", {
+      configurable: true,
+      value: {
+        betaDiagnostics: { reportIssue, getReportStatus: async () => "queued" },
+      },
+    });
     const screen = await render(
       <ComposerClaudeCacheReviewPanel
         review={makeReview({ status: "uncertain" })}
@@ -131,9 +142,19 @@ describe("ComposerClaudeCacheReviewPanel", () => {
       ]) {
         await expect.element(page.getByRole("button", { name: label })).toBeDisabled();
       }
+      await expect.element(page.getByText("Report queued locally", { exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Copy diagnostic ID", exact: true }).click();
+      expect(writeText).toHaveBeenCalledExactlyOnceWith("12345678-1234-4234-8234-123456789012");
+      expect(reportIssue).toHaveBeenCalledExactlyOnceWith({
+        code: "claude.cache.uncertain",
+        reason: "unknown",
+      });
       expect(onRespond).not.toHaveBeenCalled();
     } finally {
       await screen.unmount();
+      Object.defineProperty(window, "desktopBridge", { configurable: true, value: previousBridge });
+      if (originalClipboard) Object.defineProperty(navigator, "clipboard", originalClipboard);
+      else Reflect.deleteProperty(navigator, "clipboard");
     }
   });
 
