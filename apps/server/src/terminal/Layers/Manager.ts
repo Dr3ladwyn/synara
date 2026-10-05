@@ -1059,6 +1059,12 @@ export class TerminalManagerRuntime extends EventEmitter<TerminalManagerEvents> 
 
   async write(raw: TerminalWriteInput): Promise<void> {
     const input = decodeTerminalWriteInput(raw);
+    if (input.onlyIfIdle) {
+      return this.runWithThreadLock(input.threadId, async () => {
+        await this.assertSessionIdle(input.threadId, input.terminalId);
+        await this.write({ ...input, onlyIfIdle: false });
+      });
+    }
     const session = this.requireSession(input.threadId, input.terminalId);
     if (!session.process || session.status !== "running") {
       if (session.status === "exited") {

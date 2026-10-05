@@ -1249,6 +1249,27 @@ describe("TerminalManager", () => {
     },
   );
 
+  it("rejects navigation writes to busy shells without sending input", async () => {
+    let busy = true;
+    const { manager, ptyAdapter } = makeManager(5, { subprocessChecker: async () => busy });
+    try {
+      await manager.open(openInput());
+      const input = {
+        threadId: "thread-1",
+        terminalId: "default",
+        data: "cd /tmp\r",
+        onlyIfIdle: true,
+      };
+      await expect(manager.write(input)).rejects.toThrow(/busy/i);
+      expect(ptyAdapter.processes[0]?.writes).toEqual([]);
+      busy = false;
+      await manager.write(input);
+      expect(ptyAdapter.processes[0]?.writes).toEqual(["cd /tmp\r"]);
+    } finally {
+      manager.dispose();
+    }
+  });
+
   it("rejects idle-only closes without a specific terminal", async () => {
     const { manager, ptyAdapter } = makeManager();
     try {

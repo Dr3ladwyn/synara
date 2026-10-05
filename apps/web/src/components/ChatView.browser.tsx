@@ -1328,7 +1328,11 @@ function resolveWsRpc(body: WsRequestEnvelope["body"]): unknown {
       updatedAt: NOW_ISO,
     };
   }
-  if (tag === WS_METHODS.shellOpenInEditor || tag === WS_METHODS.terminalWrite) {
+  if (
+    tag === WS_METHODS.shellOpenInEditor ||
+    tag === WS_METHODS.terminalWrite ||
+    tag === WS_METHODS.terminalClose
+  ) {
     return null;
   }
   return {};

@@ -145,6 +145,8 @@ vi.mock("../../nativeApi", () => ({
   readNativeApi: () => ({ dialogs: { confirm: nativeApi.confirm } }),
 }));
 
+vi.mock("../ui/toast", () => ({ toastManager: { add: vi.fn() } }));
+
 vi.mock("../ChatView.logic", () => ({
   shouldAutoDeleteTerminalThreadOnLastClose: terminalLogic.shouldAutoDelete,
 }));
@@ -234,11 +236,29 @@ describe("useChatTerminalController", () => {
       api: expect.any(Object),
       threadId: THREAD_ID,
       terminalId: "terminal-1",
-      clearHistoryBeforeClose: true,
+      requireStructuredClose: true,
     });
     expect(terminalHarness.actions.closeTerminal).toHaveBeenCalledWith(THREAD_ID, "terminal-1");
     expect(onDeletePlaceholderThread).toHaveBeenCalledWith(THREAD_ID);
     expect(result.terminalFocusRequestId).toBe(1);
+  });
+
+  it("keeps the terminal and its thread until structured close succeeds", async () => {
+    terminalLogic.shouldAutoDelete.mockReturnValue(true);
+    let rejectClose!: (error: Error) => void;
+    terminalSession.disposeAndClose.mockReturnValueOnce(
+      new Promise<void>((_, reject) => {
+        rejectClose = reject;
+      }),
+    );
+    const closing = render().closeTerminal("terminal-1");
+    await Promise.resolve();
+    expect(terminalHarness.actions.closeTerminal).not.toHaveBeenCalled();
+    expect(onDeletePlaceholderThread).not.toHaveBeenCalled();
+    rejectClose(new Error("Connection lost"));
+    await closing;
+    expect(terminalHarness.actions.closeTerminal).not.toHaveBeenCalled();
+    expect(onDeletePlaceholderThread).not.toHaveBeenCalled();
   });
 
   it("finalizes a naturally exited terminal without confirmation or placeholder deletion", () => {

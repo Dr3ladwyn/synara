@@ -393,4 +393,5 @@ active terminal is retained. Retired nested sessions are closed only when the
 server verifies they are idle, preserving their saved history. Busy sessions or
 sessions whose activity cannot be checked remain pending for the next mount.
 Project actions use the same server check, including after reloading the app.
-A failed explicit close keeps the dock terminal visible and usable.
+Opening a workspace path verifies on the server that the shell is idle before sending navigation input.
+A failed explicit close keeps the terminal visible and usable. Reopening after close or shell exit uses a new session identity so delayed cleanup cannot terminate the new shell.

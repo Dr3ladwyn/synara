@@ -3632,6 +3632,7 @@ export default function Sidebar() {
             threadId,
             terminalId: targetTerminalId,
             data: cdCommand,
+            onlyIfIdle: true,
           });
         } catch (error) {
           if (shouldCreateNewTerminal && !currentTerminalState.hasSession) {

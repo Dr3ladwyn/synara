@@ -10,6 +10,7 @@ import {
 } from "../../lib/terminalCloseConfirmation";
 import { readNativeApi } from "../../nativeApi";
 import { shouldAutoDeleteTerminalThreadOnLastClose } from "../ChatView.logic";
+import { toastManager } from "../ui/toast";
 import { disposeAndCloseTerminalSession } from "../terminal/terminalSession";
 
 type AutoDeleteCandidateThread = Pick<
@@ -168,12 +169,21 @@ export function useChatTerminalController({
         willDeleteThread: shouldDeletePlaceholderThread,
       });
       if (!confirmed) return;
-      disposeAndCloseTerminalSession({
-        api,
-        threadId: activeThreadId,
-        terminalId,
-        clearHistoryBeforeClose: isFinalTerminal,
-      });
+      try {
+        await disposeAndCloseTerminalSession({
+          api,
+          threadId: activeThreadId,
+          terminalId,
+          requireStructuredClose: true,
+        });
+      } catch (error) {
+        toastManager.add({
+          type: "error",
+          title: "Unable to close terminal",
+          description: error instanceof Error ? error.message : "Please try again.",
+        });
+        return;
+      }
       closeTerminalInStore(activeThreadId, terminalId);
       requestTerminalFocus();
       if (shouldDeletePlaceholderThread) {

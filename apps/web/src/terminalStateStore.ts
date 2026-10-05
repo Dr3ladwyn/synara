@@ -5,6 +5,7 @@
  * API constrained to store actions/selectors.
  */
 
+import { randomTerminalId } from "./components/terminal/terminalIds";
 import { type TerminalActivityState, type TerminalCliKind } from "@synara/shared/terminalThreads";
 import type { ThreadId } from "@synara/contracts";
 import { create } from "zustand";
@@ -645,8 +646,13 @@ function closeThreadTerminal(state: ThreadTerminalState, terminalId: string): Th
     return normalized;
   }
 
+  // Late exit/close requests belong to the old PTY, including across reloads.
+  const replacementId = randomTerminalId();
   return normalizeThreadTerminalState({
     ...createDefaultThreadTerminalState(),
+    terminalIds: [replacementId],
+    activeTerminalId: replacementId,
+    terminalLabelsById: { [replacementId]: "Terminal 1" },
     entryPoint: normalized.entryPoint,
     terminalOpen: false,
     presentationMode: normalized.presentationMode,

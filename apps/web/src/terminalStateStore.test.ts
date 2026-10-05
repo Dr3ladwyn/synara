@@ -227,7 +227,9 @@ describe("terminalStateStore actions", () => {
       useTerminalStateStore.getState().terminalStateByThreadId,
       THREAD_ID,
     );
-    expect(terminalState.terminalLabelsById).toEqual({ default: "Terminal 1" });
+    expect(terminalState.terminalLabelsById).toEqual({
+      [terminalState.activeTerminalId]: "Terminal 1",
+    });
     expect(terminalState.terminalCliKindsById).toEqual({});
   });
 
@@ -309,15 +311,35 @@ describe("terminalStateStore actions", () => {
     ).toEqual({});
   });
 
-  it("resets to default and clears persisted entry when closing the last terminal", () => {
+  it("reserves a fresh identity without opening a replacement when closing the last terminal", () => {
     const store = useTerminalStateStore.getState();
     store.closeTerminal(THREAD_ID, "default");
 
-    expect(useTerminalStateStore.getState().terminalStateByThreadId[THREAD_ID]).toBeUndefined();
-    expect(
-      selectThreadTerminalState(useTerminalStateStore.getState().terminalStateByThreadId, THREAD_ID)
-        .terminalIds,
-    ).toEqual(["default"]);
+    const state = selectThreadTerminalState(
+      useTerminalStateStore.getState().terminalStateByThreadId,
+      THREAD_ID,
+    );
+    expect(state.terminalOpen).toBe(false);
+    expect(state.hasSession).toBe(false);
+    expect(state.activeTerminalId).not.toBe("default");
+    expect(state.terminalIds).toEqual([state.activeTerminalId]);
+  });
+
+  it("uses a new identity after close, including hydration, and ignores the old exit", () => {
+    const store = useTerminalStateStore.getState();
+    store.setTerminalOpen(THREAD_ID, true);
+    store.closeTerminal(THREAD_ID, "default");
+    const hydrated = sanitizePersistedTerminalStateByThreadId(
+      useTerminalStateStore.getState().terminalStateByThreadId,
+    );
+    useTerminalStateStore.setState({ terminalStateByThreadId: hydrated });
+    store.setTerminalOpen(THREAD_ID, true);
+    const reopened = useTerminalStateStore.getState().terminalStateByThreadId[THREAD_ID]!;
+    expect(reopened.activeTerminalId).not.toBe("default");
+    expect(store.closeExitedTerminal(THREAD_ID, "default")).toBe("ignored");
+    expect(useTerminalStateStore.getState().terminalStateByThreadId[THREAD_ID]?.terminalOpen).toBe(
+      true,
+    );
   });
 
   it("keeps terminal-first threads terminal-first after closing the last terminal", () => {
@@ -332,7 +354,8 @@ describe("terminalStateStore actions", () => {
     expect(useTerminalStateStore.getState().terminalStateByThreadId[THREAD_ID]).toBeDefined();
     expect(terminalState.entryPoint).toBe("terminal");
     expect(terminalState.terminalOpen).toBe(false);
-    expect(terminalState.terminalIds).toEqual(["default"]);
+    expect(terminalState.terminalIds).toEqual([terminalState.activeTerminalId]);
+    expect(terminalState.activeTerminalId).not.toBe("default");
   });
 
   it("closes the only session without replacing it and ignores late exits", () => {
