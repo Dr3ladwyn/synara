@@ -1,5 +1,5 @@
 // FILE: useChatTerminalController.test.ts
-// Purpose: Characterizes terminal split limits, focus requests, and final-tab close behavior.
+// Purpose: Checks terminal focus and final-session close behavior.
 // Layer: Chat terminal controller tests
 
 import { ThreadId } from "@synara/contracts";
@@ -196,28 +196,17 @@ describe("useChatTerminalController", () => {
     onDeletePlaceholderThread.mockReset();
   });
 
-  it("bumps focus after a split and refuses splits at the group limit", () => {
+  it("focuses the existing terminal when requested again", () => {
     let result = render();
-
-    result.splitTerminalRight();
+    result.createTerminalFromShortcut();
     result = render();
-
-    expect(terminalHarness.actions.splitTerminalRight).toHaveBeenCalledWith(
+    expect(result.terminalFocusRequestId).toBe(1);
+    expect(terminalHarness.actions.setTerminalPresentationMode).toHaveBeenCalledWith(
       THREAD_ID,
-      "terminal-new",
+      "workspace",
     );
-    expect(result.terminalFocusRequestId).toBe(1);
-
-    terminalHarness.terminalState = terminalHarness.makeTerminalState(
-      Array.from({ length: 6 }, (_, index) => `terminal-${index + 1}`),
-    );
-    result = render();
-    result.splitTerminalRight();
-    result = render();
-
-    expect(result.hasReachedSplitLimit).toBe(true);
-    expect(terminalHarness.actions.splitTerminalRight).toHaveBeenCalledTimes(1);
-    expect(result.terminalFocusRequestId).toBe(1);
+    expect(terminalHarness.actions.setTerminalOpen).toHaveBeenCalledWith(THREAD_ID, true);
+    expect(terminalHarness.actions.newTerminal).not.toHaveBeenCalled();
   });
 
   it("honors close confirmation before deleting a final placeholder terminal thread", async () => {

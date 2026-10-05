@@ -1194,6 +1194,74 @@ describe("TerminalManager", () => {
     manager.dispose();
   });
 
+  it("checks current processes before an idle-only close, even without an activity event", async () => {
+    let busy = false;
+    const { manager, ptyAdapter } = makeManager(5, {
+      subprocessChecker: async () => busy,
+      subprocessPollIntervalMs: 60_000,
+    });
+    try {
+      const opened = await manager.open(openInput());
+      busy = true;
+      const input = { threadId: "thread-1", terminalId: "default", onlyIfIdle: true };
+      await expect(manager.close(input)).rejects.toThrow(/busy/i);
+      expect(ptyAdapter.processes[0]?.killed).toBe(false);
+      expect((await manager.open(openInput())).pid).toBe(opened.pid);
+
+      busy = false;
+      await manager.close(input);
+      expect(ptyAdapter.processes[0]?.killed).toBe(true);
+    } finally {
+      manager.dispose();
+    }
+  });
+
+  it.each(["unavailable", "busy", "failed"])(
+    "preserves a terminal when the process snapshot is %s during an idle-only close",
+    async (state) => {
+      let closing = false;
+      const { manager, ptyAdapter } = makeManager(5, {
+        processSnapshotObserver: {
+          capture: async () => {
+            if (!closing) return new Map();
+            if (state === "failed") throw new Error("snapshot failed");
+            return state === "unavailable"
+              ? null
+              : new Map([[9000, [{ pid: 9100, command: "node build.js" }]]]);
+          },
+          retryDelayMs: () => 60_000,
+          dispose: vi.fn(),
+        },
+      });
+      try {
+        await manager.open(openInput());
+        closing = true;
+        await expect(
+          manager.close({ threadId: "thread-1", terminalId: "default", onlyIfIdle: true }),
+        ).rejects.toThrow();
+        expect(ptyAdapter.processes[0]?.killed).toBe(false);
+        // Explicit user closes retain their existing semantics.
+        await manager.close({ threadId: "thread-1", terminalId: "default" });
+        expect(ptyAdapter.processes[0]?.killed).toBe(true);
+      } finally {
+        manager.dispose();
+      }
+    },
+  );
+
+  it("rejects idle-only closes without a specific terminal", async () => {
+    const { manager, ptyAdapter } = makeManager();
+    try {
+      await manager.open(openInput());
+      await expect(manager.close({ threadId: "thread-1", onlyIfIdle: true })).rejects.toThrow(
+        /terminalId/,
+      );
+      expect(ptyAdapter.processes[0]?.killed).toBe(false);
+    } finally {
+      manager.dispose();
+    }
+  });
+
   it("deletes history file when close(deleteHistory=true)", async () => {
     const { manager, ptyAdapter, logsDir } = makeManager();
     await manager.open(openInput());

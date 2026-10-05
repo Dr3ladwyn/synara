@@ -90,6 +90,9 @@ export const TerminalCloseInput = Schema.Struct({
   ...TerminalThreadInput.fields,
   terminalId: Schema.optional(TerminalIdSchema),
   deleteHistory: Schema.optional(Schema.Boolean),
+  // Automatic replacement/retirement must verify inactivity on the server.
+  // Requires a terminalId; an unavailable process snapshot rejects the close.
+  onlyIfIdle: Schema.optional(Schema.Boolean),
 });
 export type TerminalCloseInput = Schema.Codec.Encoded<typeof TerminalCloseInput>;
 

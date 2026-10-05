@@ -1220,13 +1220,50 @@ export class TerminalManagerRuntime extends EventEmitter<TerminalManagerEvents> 
   async close(raw: TerminalCloseInput): Promise<void> {
     const input = decodeTerminalCloseInput(raw);
     await this.runWithThreadLock(input.threadId, async () => {
+      if (input.onlyIfIdle && !input.terminalId) {
+        throw new Error("An idle-only close requires a terminalId.");
+      }
       if (input.terminalId) {
+        if (input.onlyIfIdle) {
+          await this.assertSessionIdle(input.threadId, input.terminalId);
+        }
         await this.closeSession(input.threadId, input.terminalId, input.deleteHistory === true);
         return;
       }
 
       await this.closeThreadSessions(input.threadId, input.deleteHistory === true);
     });
+  }
+
+  private async assertSessionIdle(threadId: string, terminalId: string): Promise<void> {
+    const session = this.sessions.get(toSessionKey(threadId, terminalId));
+    if (!session?.process) return;
+    if (session.status !== "running" || session.pid === null) {
+      throw new Error("Unable to verify terminal activity. Try again when it is ready.");
+    }
+
+    const inspectionStartedAt = Date.now();
+    let activity: TerminalSubprocessActivity;
+    if (this.processSnapshotObserver || this.useDefaultSubprocessChecker) {
+      // Unlike activity polling, destructive operations cannot fall back to a
+      // best-effort probe that treats a failed process lookup as an idle shell.
+      const children = this.processSnapshotObserver
+        ? await this.processSnapshotObserver.capture()
+        : await captureProcessChildrenMap();
+      if (children === null) {
+        throw new Error("Unable to verify terminal activity. The terminal was kept open.");
+      }
+      activity = inspectSubprocessActivity(session.pid, children);
+    } else {
+      activity = normalizeSubprocessActivity(await this.subprocessChecker(session.pid));
+    }
+    if (
+      activity.hasRunningSubprocess ||
+      session.managedAgentRunning ||
+      (session.lastInputAt !== null && session.lastInputAt >= inspectionStartedAt)
+    ) {
+      throw new Error("The terminal is busy. Stop its command before running this action.");
+    }
   }
 
   async closeSessionsOpenedAtOrBefore(input: TerminalCloseOpenedAtOrBeforeInput): Promise<void> {
