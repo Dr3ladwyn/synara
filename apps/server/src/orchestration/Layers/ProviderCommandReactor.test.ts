@@ -1320,6 +1320,7 @@ describe("ProviderCommandReactor", () => {
       readonly messageId: string;
       readonly text: string;
       readonly createdAt: string;
+      readonly threadId?: ThreadId;
       readonly attachments?: ReadonlyArray<ChatAttachment>;
     },
   ) {
@@ -1327,7 +1328,7 @@ describe("ProviderCommandReactor", () => {
       harness.engine.dispatch({
         type: "thread.turn.start",
         commandId: CommandId.makeUnsafe(`cmd-${input.messageId}`),
-        threadId: ThreadId.makeUnsafe("thread-1"),
+        threadId: input.threadId ?? ThreadId.makeUnsafe("thread-1"),
         message: {
           messageId: asMessageId(input.messageId),
           role: "user",
@@ -1440,6 +1441,7 @@ describe("ProviderCommandReactor", () => {
         ProviderServiceShape["cancelClaudeCompactionDiscovery"]
       >,
       ingestRuntimeEvents = false,
+      commandEventTimeout?: Duration.Duration,
     ) {
       let observation = expiredCacheObservation();
       const startClaudeCompaction = vi.fn<
@@ -1451,6 +1453,7 @@ describe("ProviderCommandReactor", () => {
         getClaudeCacheObservation,
         startClaudeCompaction,
         ingestRuntimeEvents,
+        ...(commandEventTimeout ? { commandEventTimeout } : {}),
         ...(cancelClaudeCompactionDiscovery ? { cancelClaudeCompactionDiscovery } : {}),
       });
       return {
@@ -2497,6 +2500,126 @@ describe("ProviderCommandReactor", () => {
       },
     );
 
+    it.each(["compaction", "follow-up", "cancel-follow-up"] as const)(
+      "keeps slow %s alive beyond the command deadline while another chat sends",
+      async (phase) => {
+        const { harness, startClaudeCompaction, setObservation } = await createCompactionHarness(
+          undefined,
+          false,
+          Duration.millis(100),
+        );
+        const review = await sendHeldMessage(harness);
+        const releaseDispatch = Deferred.makeUnsafe<void>();
+        if (phase === "compaction") {
+          startClaudeCompaction.mockImplementation(({ threadId, turnId }) =>
+            Deferred.await(releaseDispatch).pipe(Effect.as({ threadId, turnId })),
+          );
+        } else {
+          harness.sendTurn.mockImplementationOnce(({ threadId }) =>
+            Deferred.await(releaseDispatch).pipe(
+              Effect.as({ threadId, turnId: asTurnId("after-compaction") }),
+            ),
+          );
+        }
+        let terminal: Promise<void> | undefined;
+        try {
+          await Effect.runPromise(
+            harness.engine.dispatch({
+              type: "thread.claude-cache.respond",
+              commandId: CommandId.makeUnsafe("cmd-slow-compact"),
+              threadId: ThreadId.makeUnsafe("thread-1"),
+              reviewId: review.reviewId,
+              messageId: review.messageId,
+              decision: "compact",
+              createdAt: new Date().toISOString(),
+            }),
+          );
+          await waitFor(() => startClaudeCompaction.mock.calls.length === 1);
+          if (phase !== "compaction") {
+            await harness.drain();
+            setObservation({ ...review.assessment, contextTokens: 16_000, state: "likely-warm" });
+            terminal = emitCompactionTerminal(
+              harness,
+              startClaudeCompaction.mock.calls[0]![0].turnId,
+              {
+                state: "completed",
+                contextCompacted: true,
+              },
+            );
+            await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+          }
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          const expectedStatus = phase === "compaction" ? "compacting" : "responding";
+          expect((await readHarnessThread(harness))?.claudeCacheReview?.status).toBe(
+            expectedStatus,
+          );
+          const threadId = ThreadId.makeUnsafe("thread-during-compaction");
+          await Effect.runPromise(
+            harness.engine.dispatch({
+              type: "thread.create",
+              commandId: CommandId.makeUnsafe("cmd-create-during-compaction"),
+              threadId,
+              projectId: asProjectId("project-1"),
+              title: "Independent chat",
+              modelSelection: { provider: "codex", model: "gpt-5-codex" },
+              interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+              runtimeMode: "approval-required",
+              branch: null,
+              worktreePath: null,
+              createdAt: new Date().toISOString(),
+            }),
+          );
+          await dispatchHarnessUserTurn(harness, {
+            threadId,
+            messageId: "during-compaction",
+            text: "Work while Claude compacts",
+            createdAt: new Date().toISOString(),
+          });
+          await waitFor(() =>
+            harness.sendTurn.mock.calls.some(([input]) => input.threadId === threadId),
+          );
+          expect((await readHarnessThread(harness))?.claudeCacheReview?.status).toBe(
+            expectedStatus,
+          );
+          if (phase === "cancel-follow-up") {
+            await Effect.runPromise(
+              harness.engine.dispatch({
+                type: "thread.session.stop",
+                commandId: CommandId.makeUnsafe("cmd-stop-pending-cache-send"),
+                threadId: ThreadId.makeUnsafe("thread-1"),
+                createdAt: new Date().toISOString(),
+              }),
+            );
+            await waitFor(() => harness.stopRuntimeSession.mock.calls.length === 1);
+            await Effect.runPromise(
+              harness.reactor.drain.pipe(Effect.timeout(Duration.seconds(1))),
+            );
+            expect((await readHarnessThread(harness))?.claudeCacheReview).toBeNull();
+            expect((await readHarnessThread(harness))?.session?.status).toBe("stopped");
+          }
+        } finally {
+          await Effect.runPromise(Deferred.succeed(releaseDispatch, undefined));
+          await terminal;
+        }
+        await harness.drain();
+        if (phase === "compaction") {
+          setObservation({ ...review.assessment, contextTokens: 16_000, state: "likely-warm" });
+          await emitCompactionTerminal(harness, startClaudeCompaction.mock.calls[0]![0].turnId, {
+            state: "completed",
+            contextCompacted: true,
+          });
+        }
+        await waitFor(() => harness.sendTurn.mock.calls.length === 2);
+        await harness.drain();
+        const savedSends = harness.sendTurn.mock.calls.filter(
+          ([input]) => input.threadId === "thread-1",
+        );
+        expect(savedSends).toHaveLength(1);
+        expect(savedSends[0]?.[0].input).toBe("Continue with this exact message");
+        expect((await readHarnessThread(harness))?.claudeCacheReview).toBeNull();
+      },
+    );
+
     it("releases the original message exactly once after matching successful compaction", async () => {
       const { harness, startClaudeCompaction, setObservation } = await createCompactionHarness();
       const review = await sendHeldMessage(harness);
@@ -3208,6 +3331,8 @@ describe("ProviderCommandReactor", () => {
     it.each([
       "confirmed",
       "confirmed-after-reconciliation",
+      "confirmed-inflight-behind-cursor",
+      "inflight-behind-cursor",
       "cancelled-confirmed",
       "cancelled-missing",
       "confirmed-unacknowledged",
@@ -3217,6 +3342,7 @@ describe("ProviderCommandReactor", () => {
       "uncertain-missing",
       "failed-recovery-interrupted",
       "uncertain-user-delivery",
+      "inflight-user-delivery",
       "missing",
       "failed",
     ] as const)(
@@ -3307,6 +3433,24 @@ describe("ProviderCommandReactor", () => {
               claimExpiresAt: now,
             }),
           );
+          if (
+            evidence.endsWith("inflight-behind-cursor") &&
+            eventSequence === compactResponse.sequence
+          ) {
+            const events = await Effect.runPromise(
+              Stream.runCollect(harness.engine.readEventsThrough(0, compactResponse.sequence)),
+            );
+            for (const event of events) {
+              await Effect.runPromise(
+                harness.deliveryRepository.advanceCursor({
+                  consumerName: PROVIDER_COMMAND_REACTOR_CONSUMER,
+                  eventSequence: event.sequence,
+                  updatedAt: now,
+                }),
+              );
+            }
+            continue;
+          }
           await Effect.runPromise(
             (evidence === "uncertain-missing" ||
               evidence === "failed-recovery-interrupted" ||
@@ -3329,7 +3473,7 @@ describe("ProviderCommandReactor", () => {
           );
         }
         let uncertainUserDeliverySequence: number | undefined;
-        if (evidence === "uncertain-user-delivery") {
+        if (evidence === "uncertain-user-delivery" || evidence === "inflight-user-delivery") {
           // A confirmed compaction may have released the user's message before
           // its acknowledgement was lost and the old terminal was pruned.
           const continued = await Effect.runPromise(
@@ -3353,16 +3497,31 @@ describe("ProviderCommandReactor", () => {
               claimExpiresAt: now,
             }),
           );
-          await Effect.runPromise(
-            harness.deliveryRepository.markTerminalFailure({
-              consumerName: PROVIDER_COMMAND_REACTOR_CONSUMER,
-              eventSequence: continued.sequence,
-              expectedClaimOwner: "previous-process",
-              state: "uncertain",
-              error: "Lost user message acknowledgement",
-              updatedAt: now,
-            }),
-          );
+          if (evidence === "uncertain-user-delivery")
+            await Effect.runPromise(
+              harness.deliveryRepository.markTerminalFailure({
+                consumerName: PROVIDER_COMMAND_REACTOR_CONSUMER,
+                eventSequence: continued.sequence,
+                expectedClaimOwner: "previous-process",
+                state: "uncertain",
+                error: "Lost user message acknowledgement",
+                updatedAt: now,
+              }),
+            );
+          if (evidence === "inflight-user-delivery") {
+            const events = await Effect.runPromise(
+              Stream.runCollect(harness.engine.readEventsThrough(0, continued.sequence)),
+            );
+            for (const event of events) {
+              await Effect.runPromise(
+                harness.deliveryRepository.advanceCursor({
+                  consumerName: PROVIDER_COMMAND_REACTOR_CONSUMER,
+                  eventSequence: event.sequence,
+                  updatedAt: now,
+                }),
+              );
+            }
+          }
           await Effect.runPromise(
             harness.engine.dispatch({
               type: "thread.claude-cache.set",
@@ -3384,8 +3543,10 @@ describe("ProviderCommandReactor", () => {
           evidence !== "missing" &&
           evidence !== "cancelled-missing" &&
           evidence !== "uncertain-missing" &&
+          evidence !== "inflight-behind-cursor" &&
           evidence !== "failed-recovery-interrupted" &&
-          evidence !== "uncertain-user-delivery"
+          evidence !== "uncertain-user-delivery" &&
+          evidence !== "inflight-user-delivery"
         ) {
           const terminal = await Effect.runPromise(
             harness.runtimeEventRepository.append({
@@ -3544,7 +3705,7 @@ describe("ProviderCommandReactor", () => {
           ).toEqual([]);
           return;
         }
-        if (evidence === "uncertain-user-delivery") {
+        if (evidence === "uncertain-user-delivery" || evidence === "inflight-user-delivery") {
           expect(harness.sendTurn).not.toHaveBeenCalled();
           expect((await readHarnessThread(harness))?.claudeCacheReview?.status).toBe("uncertain");
           expect(
@@ -3580,6 +3741,7 @@ describe("ProviderCommandReactor", () => {
         if (
           evidence === "confirmed" ||
           evidence === "confirmed-after-reconciliation" ||
+          evidence === "confirmed-inflight-behind-cursor" ||
           evidence === "confirmed-unacknowledged"
         ) {
           await waitFor(() => harness.sendTurn.mock.calls.length === 1);
@@ -3593,7 +3755,11 @@ describe("ProviderCommandReactor", () => {
         } else {
           expect(harness.sendTurn).not.toHaveBeenCalled();
           expect((await readHarnessThread(harness))?.claudeCacheReview?.status).toBe("failed");
-          if (evidence === "uncertain-missing" || evidence === "failed-recovery-interrupted") {
+          if (
+            evidence === "uncertain-missing" ||
+            evidence === "failed-recovery-interrupted" ||
+            evidence === "inflight-behind-cursor"
+          ) {
             expect(
               await Effect.runPromise(
                 harness.reactor.listBlockingDeliveries({ threadId, limit: 10 }),

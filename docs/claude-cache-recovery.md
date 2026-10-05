@@ -53,6 +53,14 @@ Waiting for a choice releases the delivery lock. Other tasks continue normally; 
 the affected task waits. A response identifies the review and message, and stale or duplicate
 responses cannot authorize a different send. Relevant session, model, or context changes require
 revalidation. Archive, stop, and delete revoke pending authorization.
+Accepted choices also release the ordered delivery source after acquiring a durable claim. A scoped
+worker owns compaction preparation and the subsequent send, without the ordinary two-minute command
+deadline. Slow compaction or a slow follow-up therefore does not become an uncertain delivery merely
+because time elapsed, and other tasks can still send. Advancing the source cursor is only admission;
+the delivery stays inflight until its actual result is persisted. Startup recovers unfinished cache
+responses even when their sequence is behind that cursor, without replaying an ambiguous send.
+Stop and other cancellation commands can interrupt a pending follow-up; an interrupted send whose
+acceptance cannot be proven still requires reconciliation rather than automatic replay.
 Installing a hold and marking the session ready happen in one command. Admission checks the
 conversation journal for cancellation after the source request, including cancellation during a
 cache observation, so a delayed hold cannot revive a stopped task.

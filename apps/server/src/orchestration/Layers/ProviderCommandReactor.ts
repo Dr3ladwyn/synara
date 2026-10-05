@@ -578,11 +578,12 @@ export function awaitInflightClaimSettlement<TClaim extends ProviderCommandClaim
 const PROVIDER_COMMAND_SAFE_RETRY_LIMIT = 3;
 const PROVIDER_COMMAND_SAFE_RETRY_DELAY = Duration.millis(50);
 /**
- * Every provider intent runs under a single process-wide delivery lock, so an
+ * Ordinary provider intents run under a single process-wide delivery lock, so an
  * unbounded provider call does not stall one thread — it stalls the reactor,
  * which back-pressures the orchestration event PubSub and eventually times out
  * every dispatched command. These deadlines make "hung" degrade into a normal
- * terminal delivery failure instead of a process-wide deadlock.
+ * terminal delivery failure instead of a process-wide deadlock. Claude cache
+ * responses instead retain durable claims in scoped workers outside that lock.
  */
 const PROVIDER_COMMAND_INTERRUPT_TIMEOUT = Duration.seconds(10);
 const PROVIDER_COMMAND_STOP_TIMEOUT = Duration.seconds(15);
@@ -919,6 +920,14 @@ const make = Effect.gen(function* () {
     lookup: () => Effect.succeed(true),
   });
   const deliverySourceLock = yield* Semaphore.make(1);
+  const pendingClaudeCacheResponses = new Map<
+    number,
+    {
+      readonly threadId: ThreadId;
+      readonly admitted: Deferred.Deferred<void, unknown>;
+      readonly cancelled: Deferred.Deferred<void>;
+    }
+  >();
   let reconcileDeliveryRuntime: ProviderCommandReactorShape["reconcileDelivery"] | undefined;
 
   const hasHandledTurnStartRecently = (key: string) =>
@@ -6934,9 +6943,9 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  // One attach-before-replay source owns every provider intent. The claimed
-  // canary classes settle before cursor advancement. Remaining classes execute
-  // serially in the same source but do not acquire delivery claims yet.
+  // One attach-before-replay source admits every provider intent. Ordinary
+  // claims settle before cursor advancement. Cache responses retain inflight
+  // claims outside the source, so startup also recovers them behind the cursor.
   const startProviderIntentSource = Effect.gen(function* () {
     {
       // Cancellation intents can be queued behind discovery under the ordered
@@ -6954,6 +6963,11 @@ const make = Effect.gen(function* () {
           if (preparation) {
             if (event.sequence <= preparation.sourceEventSequence) return;
             yield* Deferred.succeed(preparation.cancellation, undefined);
+          }
+          for (const [sequence, response] of pendingClaudeCacheResponses) {
+            if (response.threadId === event.payload.threadId && sequence < event.sequence) {
+              yield* Deferred.succeed(response.cancelled, undefined);
+            }
           }
           yield* (
             providerService.cancelClaudeCompactionDiscovery?.(event.payload.threadId) ?? Effect.void
@@ -6990,7 +7004,7 @@ const make = Effect.gen(function* () {
     let cursor = consumerState.value.lastAckedSequence;
     const refreshCursor = Effect.gen(function* () {
       const state = yield* deliveryRepository.getConsumerState(PROVIDER_COMMAND_REACTOR_CONSUMER);
-      if (Option.isSome(state)) cursor = state.value.lastAckedSequence;
+      if (Option.isSome(state)) cursor = Math.max(cursor, state.value.lastAckedSequence);
     });
 
     const advanceCursor = Effect.fnUntraced(function* (event: OrchestrationEvent) {
@@ -6999,7 +7013,7 @@ const make = Effect.gen(function* () {
         eventSequence: event.sequence,
         updatedAt: new Date().toISOString(),
       });
-      if (advanced) cursor = event.sequence;
+      if (advanced) cursor = Math.max(cursor, event.sequence);
       return advanced;
     });
 
@@ -7133,6 +7147,10 @@ const make = Effect.gen(function* () {
         consumerName: PROVIDER_COMMAND_REACTOR_CONSUMER,
         eventSequence: event.sequence,
       });
+      if (Option.isSome(existing)) {
+        const response = pendingClaudeCacheResponses.get(event.sequence);
+        if (response) yield* Deferred.succeed(response.admitted, undefined);
+      }
       while (Option.isSome(existing)) {
         if (existing.value.state === "succeeded") {
           yield* requireCursorAdvance(event);
@@ -7273,10 +7291,34 @@ const make = Effect.gen(function* () {
           );
         }
 
+        const cacheResponse = pendingClaudeCacheResponses.get(event.sequence);
+        if (cacheResponse) yield* Deferred.succeed(cacheResponse.admitted, undefined);
         const workerResult = yield* runBoundedProviderCall({
           label: `The provider command '${event.type}'`,
-          timeout: commandEventTimeout,
-          call: processDomainEvent(event),
+          // A cache choice owns a durable delivery outside the ordered source.
+          // Native compaction and its follow-up are not wall-clock failures.
+          timeout: cacheResponse ? Duration.infinity : commandEventTimeout,
+          call:
+            cacheResponse &&
+            event.type === "thread.claude-cache-response-requested" &&
+            event.payload.decision === "continue"
+              ? processDomainEvent(event).pipe(
+                  Effect.raceFirst(
+                    Deferred.await(cacheResponse.cancelled).pipe(
+                      // Controls or prompt enqueue may already have reached the
+                      // provider. Cancellation releases the lease for Stop, but
+                      // must not manufacture proof that the send was rejected.
+                      Effect.andThen(
+                        Effect.die(
+                          new Error(
+                            "The saved send was interrupted before acceptance could be confirmed.",
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              : processDomainEvent(event),
         });
         if (workerResult._tag === "timeout") {
           // The delivery lock is single-permit and process-wide, so an attempt
@@ -7782,15 +7824,73 @@ const make = Effect.gen(function* () {
       ),
     );
 
+    const runClaudeCacheResponseDelivery = (
+      event: Extract<ProviderIntentEvent, { type: "thread.claude-cache-response-requested" }>,
+      work: Effect.Effect<void, unknown, Scope.Scope>,
+    ) =>
+      Effect.gen(function* () {
+        if (pendingClaudeCacheResponses.has(event.sequence)) return;
+        const existing = yield* deliveryRepository.getDelivery({
+          consumerName: PROVIDER_COMMAND_REACTOR_CONSUMER,
+          eventSequence: event.sequence,
+        });
+        // Settled receipts and a previous process's inflight claim must finish
+        // recovery before the startup compaction scan classifies their evidence.
+        if (Option.isSome(existing) && existing.value.state !== "retry") {
+          return yield* work;
+        }
+        const response = {
+          threadId: event.payload.threadId,
+          admitted: yield* Deferred.make<void, unknown>(),
+          cancelled: yield* Deferred.make<void>(),
+        };
+        pendingClaudeCacheResponses.set(event.sequence, response);
+        yield* work.pipe(
+          Effect.onExit((exit) => Deferred.done(response.admitted, exit)),
+          Effect.ensuring(Effect.sync(() => pendingClaudeCacheResponses.delete(event.sequence))),
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.failCause(cause)
+              : Effect.logError("Claude cache response delivery failed", {
+                  eventSequence: event.sequence,
+                  threadId: event.payload.threadId,
+                  cause: Cause.pretty(cause),
+                }),
+          ),
+          Effect.forkScoped,
+        );
+        // Advance only once there is durable ownership, not merely a scheduled
+        // fiber. The inflight claim survives a crash and is recovered separately
+        // from the source cursor; it is never considered provider acceptance.
+        yield* Deferred.await(response.admitted);
+        yield* requireCursorAdvance(event);
+      });
+
     const retryableDeliveries = yield* deliveryRepository.listRetryableDeliveries(
       PROVIDER_COMMAND_REACTOR_CONSUMER,
     );
     yield* deliverySourceLock.withPermits(1)(
-      Effect.forEach(retryableDeliveries, resumeRetryableDelivery, { discard: true }),
+      Effect.forEach(
+        retryableDeliveries,
+        (delivery) =>
+          Effect.gen(function* () {
+            const event = yield* readProviderIntentEvent(delivery.eventSequence);
+            return yield* event.type === "thread.claude-cache-response-requested"
+              ? runClaudeCacheResponseDelivery(event, resumeRetryableDelivery(delivery))
+              : resumeRetryableDelivery(delivery);
+          }),
+        { discard: true },
+      ),
     );
 
     const processOrderedEventSerially = (event: OrchestrationEvent) =>
-      deliverySourceLock.withPermits(1)(processOrderedEvent(event));
+      deliverySourceLock.withPermits(1)(
+        Effect.suspend(() =>
+          event.sequence > cursor && event.type === "thread.claude-cache-response-requested"
+            ? runClaudeCacheResponseDelivery(event, processOrderedEvent(event))
+            : processOrderedEvent(event),
+        ),
+      );
 
     const replayThrough = yield* orchestrationEngine.getEventHighWaterSequence;
     yield* Stream.runForEach(
@@ -7810,6 +7910,12 @@ const make = Effect.gen(function* () {
   const recoverClaudeCompactions = Effect.gen(function* () {
     const snapshot = yield* orchestrationEngine.getReadModel();
     for (const thread of snapshot.threads) {
+      if (
+        Array.from(pendingClaudeCacheResponses.values()).some(
+          (response) => response.threadId === thread.id,
+        )
+      )
+        continue;
       const review =
         thread.claudeCacheReview ?? (yield* readBlockedClaudeCompactionAttempt(thread.id));
       if (
@@ -7953,12 +8059,16 @@ const make = Effect.gen(function* () {
   ) as ProviderCommandReactorShape["start"];
 
   const drain: ProviderCommandReactorShape["drain"] = Effect.gen(function* () {
-    const targetSequence = yield* orchestrationEngine.getEventHighWaterSequence;
     while (true) {
+      const targetSequence = yield* orchestrationEngine.getEventHighWaterSequence;
       const consumerState = yield* deliveryRepository.getConsumerState(
         PROVIDER_COMMAND_REACTOR_CONSUMER,
       );
-      if (Option.isSome(consumerState) && consumerState.value.lastAckedSequence >= targetSequence) {
+      if (
+        pendingClaudeCacheResponses.size === 0 &&
+        Option.isSome(consumerState) &&
+        consumerState.value.lastAckedSequence >= targetSequence
+      ) {
         return;
       }
       yield* Effect.sleep(Duration.millis(5));
