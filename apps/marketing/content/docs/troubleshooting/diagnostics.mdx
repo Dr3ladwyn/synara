@@ -203,3 +203,11 @@ For most task-runtime problems, collect:
 - [ ] The report distinguishes evidence from inference
 
 Continue with [Report a problem](/docs/troubleshooting/report-a-problem) when the evidence is ready.
+
+## Beta handled-error reports
+
+Beta 1.0.1 adds diagnostic IDs for selected handled Git, voice, Claude recovery and startup failures. Copy the ID when reporting a problem. **Report queued locally** means the report was captured; **Report sent** means the upload endpoint accepted it; **Upload not confirmed** does not establish delivery. Sent does not mean a maintainer has reviewed the issue. Recent issue status is held in memory and is not a persistent report inbox.
+
+Handled reports use allowlisted codes and coarse reasons rather than raw Git output, commands, voice audio or transcript, chat IDs, project names, local paths or process IDs. Attached context is bounded to 24 allowlisted activity entries from the last ten minutes and four aggregate desktop-memory samples collected every 30 seconds. This is desktop process memory context, not backend heap profiling. No separate activity stream is uploaded.
+
+Existing native crash dumps may contain process memory, so these handled-report limits must not be read as a privacy guarantee for every crash file. Stable does not run Beta diagnostic collection. See [Synara Beta](/docs/features/synara-beta) for channel separation.

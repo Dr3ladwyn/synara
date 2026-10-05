@@ -22,6 +22,84 @@ import type { WhatsNewEntry } from "./logic";
 
 export const WHATS_NEW_ENTRIES: readonly WhatsNewEntry[] = [
   {
+    version: "1.0.1-beta.1",
+    date: "Oct 5",
+    features: [
+      {
+        id: "git-writing",
+        title: "Choose how Git messages are written",
+        description:
+          "Follow repository conventions, use Conventional Commits, or save custom instructions for generated commit messages and pull requests.",
+        details:
+          "Choose Source control writing style in Settings \u2192 Models & writing. Repository conventions are the default; missing examples fall back to concise writing. Your Git writing model and manually entered text are unchanged.",
+      },
+      {
+        id: "git-recovery",
+        title: "Keep large Git actions moving",
+        description:
+          "Commit, push and pull-request operations can continue through a connection drop and reconnect to the same action.",
+        details:
+          "Updated clients and servers recover the current phase or result without repeating the command. Long operations no longer expire at the ordinary command deadline. Recovery receipts belong to the running server: after a server restart or an unavailable receipt, check Git status before trying again.",
+      },
+      {
+        id: "claude-recovery",
+        title: "Let slow Claude recovery finish",
+        description:
+          "Reviewed cache-recovery responses stay alive during slow compaction without blocking unrelated chats.",
+        details:
+          "Cancellation and saved delivery ownership remain enforced. Session reconfiguration waits for the reviewed operation to finish, and uncertain delivery stays visible rather than being silently resent. This does not guarantee cache hits or lower usage.",
+      },
+      {
+        id: "chat-navigation",
+        title: "Keep the right chat and a readable timeline",
+        description:
+          "Closing a split preserves its surviving chat, and closing the last visible tab returns to an existing hidden draft.",
+        details:
+          "Repairs overlapping timeline rows after deferred position updates. Message navigation stays clear of the chosen transcript width and hides when there is insufficient space. Horizontal tabs ignore small vertical trackpad drift.",
+      },
+      {
+        id: "snooze",
+        title: "Keep reminders until you open them",
+        description:
+          "Snoozed chats stay out of inactivity cleanup; opening a returned chat clears its reminder highlight.",
+        details:
+          "Reminder time is respected even when the client clock differs. Running work continues while snoozed, and existing restart recovery is preserved.",
+      },
+      {
+        id: "hub-fixes",
+        title: "Smoother Hubs and approvals",
+        description:
+          "Keep Hub navigation and image intake reliable, with suggestions positioned above composer attachments.",
+        details:
+          "Quiet approval handling is limited to eligible approvals. Codex access mode is respected for Synara tools without weakening normal approval requirements. Provider-delivery blockers show their details immediately, and the unblock action handles button clicks safely.",
+      },
+      {
+        id: "diagnostics",
+        title: "See what happened to a Beta report",
+        description:
+          "Handled Git, voice and recovery errors now offer a diagnostic ID and visible report status.",
+        details:
+          "Report queued locally, Report sent and Upload not confirmed distinguish local capture from upload acceptance. Reports add bounded recent activity and desktop memory context; these summaries omit raw commands, chat content, audio and local paths. Existing crash dumps can contain process memory. Stable does not send Beta diagnostics.",
+      },
+      {
+        id: "desktop",
+        title: "Clearer closing and steadier glass",
+        description:
+          "Confirm an ordinary macOS window close or an idle app quit, with a native fallback if the renderer is unavailable.",
+        details:
+          "Closing a macOS window and quitting the app remain separate actions. Whole-window glass no longer flickers on sidebar hover; the docked sidebar toggle stays clickable, and side-panel overlays contain horizontal overflow. Finder metadata alone no longer blocks database-lock recovery; real or uncertain owners remain protected.",
+      },
+      {
+        id: "voice-and-status",
+        title: "More reliable voice and clearer activity",
+        description:
+          "Validate transcription responses before using them, and recognize Codex\u2019s plain-text ChatGPT login status.",
+        details:
+          "Invalid successful HTTP responses become visible transcription errors instead of invalid composer content. Thinking uses the brain icon and provider startup a loading icon; tool and approval activity receive distinct icons. Browser teardown and a closed launcher output stream are handled more safely.",
+      },
+    ],
+  },
+  {
     version: "1.0.0-beta.1",
     date: "Oct 4",
     features: [

@@ -82,3 +82,9 @@ In a saved, idle chat, run `/export` (or use the command menu) to download a ZIP
 [Import projects](/docs/features/project-import) brings local Codex and Claude Code conversations into Synara, including a replacement-folder choice for moved projects. Activity ordering follows the latest human message, so background assistant work does not continually promote untouched conversations.
 
 Drag a chat into another pane to open a split view, or into the composer to add a chat mention. The command palette and recent-view switcher share the file picker's visual layout.
+
+## Navigation fixes in Beta 1.0.1
+
+Closing one of the last two split panes keeps the surviving chat selected. Closing the last visible chat tab returns to an existing hidden draft without clearing its composer text. Message navigation leaves room for the selected chat width and disappears when there is insufficient gutter space. Small vertical trackpad drift no longer moves horizontal tabs.
+
+Snoozed chats stay excluded from inactivity cleanup. Opening a returned reminder marks it seen using its reminder time, including when the client clock is behind. Snooze still allows running work to continue.

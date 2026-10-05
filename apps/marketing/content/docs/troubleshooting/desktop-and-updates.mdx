@@ -121,3 +121,9 @@ Do not use a successful website build as evidence that the packaged desktop runt
 ## Still failing
 
 Continue with [Diagnostics](/docs/troubleshooting/diagnostics), then prepare a focused report using [Report a problem](/docs/troubleshooting/report-a-problem).
+
+## Close a window or quit
+
+Beta 1.0.1 asks before an ordinary macOS window close and before quitting when no chats are running. Closing the macOS window keeps the app available; choosing Quit ends the app. Running-chat quit choices remain governed by the existing interruption and resume dialog. If the renderer is unavailable, a native confirmation lets you confirm or cancel quitting. Update installation uses its own shutdown handoff.
+
+A database-lock directory containing only Finder metadata can be recovered automatically. This does not override a live lock owner or treat an uncertain owner as dead; use the visible startup error and logs instead of deleting a lock blindly.

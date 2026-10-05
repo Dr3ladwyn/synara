@@ -172,3 +172,7 @@ Before an expensive cache resumption, Synara can hold the message for review. Ch
 To publish Claude Artifacts with `/design` or `/slides`, enable **Artifacts, /design and /slides** in Settings → Providers → Claude, then start a new session. This integration is off by default and requires a compatible Claude Code version and eligible claude.ai account. Synara explains when the session cannot use it; enabling the toggle does not grant account eligibility.
 
 You can also [import local Claude projects and conversations](/docs/features/project-import) and try [Computer Use beta on macOS](/docs/features/computer-use).
+
+## Slow reviewed cache recovery
+
+Beta 1.0.1 lets a reviewed cache-recovery response continue through slow compaction beyond the ordinary command timeout. Other chats can progress while this operation holds its session. Session reconfiguration waits for it to finish or be cancelled, and uncertain delivery is not silently replayed. Admission of a reviewed response is not confirmation of provider delivery, a cache hit or reduced usage.

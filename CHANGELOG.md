@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+## [1.0.1-beta.1] — 2026-10-05
+
+A reliability update to **v1.0.0-beta.1**, covering all 28 intervening commits through feature head `c6ce7f7a0dfc5c4e31fb85c217a188885c99180e`. This publishes Beta only. Stable remains **0.9.2**, with its data and update feed unchanged. Inbox and Auto-fix CI are prepared in source for a future Stable release; Hubs and Tasks remain Beta-only. These existing Beta features are not new in this update.
+
+### Added
+
+- Source control writing style: repository conventions (default), Conventional Commits, or saved custom instructions for generated commits and pull requests.
+- Beta handled-error diagnostic IDs and local/upload status, with bounded activity and desktop memory context. Upload acceptance is not proof that a report has been reviewed; existing crash dumps may contain process memory.
+
+### Changed
+
+- Long Git mutations continue on the running server and resume the same action after WebSocket reconnect. Missing receipts or a server restart require checking repository status; no automatic replay is promised.
+- Claude reviewed cache-response delivery is owned independently of the ordinary command timeout, allowing slow compaction without blocking unrelated chats. Cancellation, uncertainty and session ownership remain enforced.
+- macOS ordinary window-close and idle-quit confirmation, including a native fallback when the renderer cannot answer. Window close and application quit retain separate semantics.
+- Thinking uses AiBrain01; provider startup uses a loading icon. Tool and approval states have clearer activity icons.
+
+### Fixed
+
+- Timeline row overlap after deferred position commits; message navigation overlapping wide transcript content; vertical trackpad drift affecting horizontal tabs.
+- Split close retaining the surviving chat and last-tab close reusing the hidden draft.
+- Snoozed chats being swept by inactivity cleanup and reminders remaining highlighted after opening.
+- Hub workspace navigation, image queue intake and suggestion positioning above attachments; narrowly scoped quiet approvals and Codex access-mode handling.
+- Provider-delivery block details at quarantine and safe unblock button events.
+- Voice transcription response validation and Codex plain-text ChatGPT authentication detection.
+- Whole-window hover flicker, docked sidebar toggle hit testing and horizontal overlay containment.
+- Database locks containing only Finder metadata, while preserving real and uncertain owner protection.
+- Browser teardown and launcher output closure handling. Developer Canary stop targets its checkout-specific macOS app rather than only the launcher; this is not an installed updater change.
+
+### Verification
+
+- Passed locally: `fmt:check`, `lint`, `typecheck`, `release:smoke`, `build`, `windows-runtime:check` and `migrations:check` (92 historical release tags).
+- The full workspace run had **15,211 passed, 37 skipped and two failures**: `projectAgent/library.test.ts` / “serializes concurrent queued mutations into two commits” failed during temporary `.git` directory removal (`ENOTEMPTY`), and `ProviderCommandReactor.test.ts` / “keeps slow compaction alive beyond the command deadline while another chat sends” hit its polling deadline. Both targeted reruns passed; both complete files then passed (**412 tests**) without source or timeout changes. The original full run is not reported as passing.
+- Source-head CI `37333204349` passed, including browser lanes. Website: 58 documentation tests, documentation integrity, lint and production build passed; external URLs were unchanged.
+- Native packaging, signing and publication results are verified by the release workflow and operator report. No live provider or interactive installed-app success is inferred from unit tests.
+
 ## [1.0.0-beta.1] — 2026-10-04
 
 **Synara 1.0.0 starts in Beta: a new workspace rail, multi-account providers, Hubs, Tasks, Inbox, same-chat handoffs and a redesigned review workflow.** This is a Beta-only release. Stable remains **0.9.2**; its app, data directory and update feed are unchanged.
