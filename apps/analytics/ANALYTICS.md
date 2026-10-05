@@ -1,3 +1,5 @@
+# Product events
+
 ## Current ownership: Synara monorepo
 
 As of 5 October 2026, this service is maintained in `apps/analytics` on Synara's
@@ -19,8 +21,6 @@ uses the existing shared redactor, whose tests also cover loopback URL handling.
 Wrangler remains pinned at 4.135.0 for this workspace because older 4.122.0 cannot
 run the Worker's 2026-09-01 compatibility date locally. Other workspace dependency
 versions are retained; the lockfile includes dependency hoisting changes.
-
-# Product events
 
 This Worker has a separate endpoint and D1 table for product events. Beta
 crashes, errors, updates, and usage diagnostics continue through their existing
@@ -154,3 +154,20 @@ The section preview uses synthetic local fixture data, not production usage.
 Published section navigation from `26e70b1` to Worker version
 `39a3b37b-c6d4-4ef4-90ca-ee597c61acbe`. Verified the authenticated live
 Providers page and navigation, `/health` 200 and unauthenticated `/api/product` 401. No production fixture rows were added.
+
+## Monorepo deployment checkpoint
+
+Synara source `67f9dec` was deployed as Worker version
+`29cd18af-d988-4d93-9a71-d31b91d0f0e6`. Verified `/healthz` 200 (`ok`),
+unauthenticated `/api/product` 401 and authenticated live Product navigation.
+The old standalone PR #3 is closed as superseded by Synara PR #1412.
+
+Checks passed: 78 analytics tests, 3 native analytics tests, the actual iOS and
+iPadOS Swift senders against isolated local Worker/D1 (5 events each), build,
+Worker deploy dry-run, frozen Bun install, root formatting/lint/typecheck, CI
+contracts and released migration lineage. Lint retains warnings; the existing
+ECharts bundle still triggers the build size warning. Full-suite first attempt
+hit a sandbox loopback restriction; the permitted run exposed two AppSnap test
+cleanup/timing failures. All 52 AppSnap tests passed isolated; a reduced-concurrency
+workspace rerun passed: 16,102 tests, 251 skipped, all 11 packages successful.
+The skips include 200 PostgreSQL tests without an isolated test database.

@@ -1,3 +1,5 @@
+# Remote connections — punto di ripartenza
+
 ## Analytics in this monorepo — 5 October 2026
 
 Dashboard, Worker, D1 migrations, legacy forwarder and tests now live in
@@ -7,7 +9,19 @@ Source imported from `synara-beta-diagnostics` commit `c2fe29c`, including all
 four Product sections. Existing Cloudflare resources and client URLs are retained.
 Use the workspace commands for future builds and deployments.
 
-# Remote connections — punto di ripartenza
+Deploy dalla repo Synara (`67f9dec`) verificato: versione Worker
+`29cd18af-d988-4d93-9a71-d31b91d0f0e6`, `/healthz` 200, API senza login 401,
+dashboard autenticata funzionante. PR backend #3 chiusa come sostituita.
+Suite finale a concorrenza 2: **16.102 passati, 251 saltati, 11 package riusciti**;
+i salti includono 200 test PostgreSQL senza database isolato. Formatting, lint
+(con warning), typecheck, CI contracts, build e dry-run Worker, install frozen
+e lineage migrazioni passati. Due errori AppSnap di cleanup/timeout nel primo
+giro parallelo non si ripetono nei 52 test isolati né nella suite finale.
+
+Sender Swift reali dei due branch nativi verificati contro Worker/D1 locale:
+5 eventi sintetici iOS e 5 iPadOS, filtri separati, consenso inizialmente spento,
+coda svuotata e opt-out corretti. Nessuna nuova prova UI/simulatore o raccolta
+globale dei completamenti nativi. Recap mobile aggiornati e pushati.
 
 Aggiornato il **5 ottobre 2026**. I checkpoint datati sostituiscono gli stati precedenti solo per le superfici espressamente verificate. L'ultimo passaggio implementa le analytics di prodotto su desktop, iPhone/iPad e backend Cloudflare; i checkpoint precedenti restano storici.
 
