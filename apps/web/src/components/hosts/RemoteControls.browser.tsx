@@ -6,48 +6,7 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 const fixture = vi.hoisted(() => ({
   back: vi.fn(),
   navigate: vi.fn(),
-  approved: false,
-  request: vi.fn(async (request: { operation: string }) => {
-    if (request.operation === "create-code")
-      return {
-        kind: "pairing-code",
-        code: "ABCD-2345",
-        inviteId: "qr-fixture",
-        rootFingerprint: "a".repeat(64),
-        expiresAt: new Date(Date.now() + 600000).toISOString(),
-      };
-    if (request.operation === "device-info")
-      return {
-        kind: "device-info",
-        label: "MacBook",
-        deviceJkt: "Controller-fingerprint-confirm-on-host-123456789",
-      };
-    if (request.operation === "approve") {
-      fixture.approved = true;
-      return { kind: "done" };
-    }
-    return {
-      kind: "host-state",
-      rootNeedsRepair: false,
-      rootExpiresAt: "2036-09-01T12:00:00Z",
-      devices: [],
-      invitations: fixture.approved
-        ? []
-        : [
-            {
-              inviteId: "pending-fixture",
-              expiresAt: new Date(Date.now() + 600000).toISOString(),
-              approved: false,
-              revoked: false,
-              pendingDevice: {
-                label: "Emanuele’s MacBook",
-                deviceJkt: "Exact-requesting-device-fingerprint-123456789",
-                publicKey: {},
-              },
-            },
-          ],
-    };
-  }),
+  request: vi.fn(),
 }));
 vi.mock("~/hooks/useAccount", () => ({
   useAccount: () => ({
@@ -80,10 +39,8 @@ vi.mock("~/lib/hosts/executionContext", async (importOriginal) => ({
 }));
 import { emitWsTransportState } from "~/wsTransportEvents";
 import { HostConnectionControl } from "./HostConnectionControl";
-import { RemotePairingPanel } from "../settings/RemotePairingPanel";
 
 beforeEach(() => {
-  fixture.approved = false;
   fixture.back.mockClear();
   fixture.request.mockClear();
 });
@@ -109,36 +66,3 @@ it.each(["light", "dark"])(
     expect(fixture.request).not.toHaveBeenCalled();
   },
 );
-it("sends the exact displayed device fingerprint for owner approval", async () => {
-  await page.viewport(1100, 1000);
-  await render(
-    <div className="mx-auto max-w-3xl space-y-6 bg-background p-6 text-foreground">
-      <RemotePairingPanel />
-    </div>,
-  );
-  await expect
-    .element(page.getByText("Exact-requesting-device-fingerprint-123456789", { exact: true }))
-    .toBeVisible();
-  await page.screenshot({ path: "./__screenshots__/remote-pairing.png" });
-  await page.getByRole("button", { name: "Approve this device", exact: true }).click();
-  await vi.waitFor(() =>
-    expect(fixture.request).toHaveBeenCalledWith({
-      operation: "approve",
-      inviteId: "pending-fixture",
-      deviceJkt: "Exact-requesting-device-fingerprint-123456789",
-    }),
-  );
-});
-
-it("shows a scannable remote invitation alongside the manual code and removes it on cancel", async () => {
-  await render(<RemotePairingPanel />);
-  await page.getByRole("button", { name: "Connect a device", exact: true }).click();
-  await expect.element(page.getByText("ABCD-2345", { exact: true })).toBeVisible();
-  await expect
-    .element(page.getByRole("img", { name: "Scan to connect to this computer" }))
-    .toBeInTheDocument();
-  await page.getByRole("button", { name: "Cancel code", exact: true }).click();
-  await expect
-    .element(page.getByRole("img", { name: "Scan to connect to this computer" }))
-    .not.toBeInTheDocument();
-});

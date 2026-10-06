@@ -205,6 +205,9 @@ export const WebSearchIcon: LucideIcon = GlobeIcon;
 export const ServerIcon: LucideIcon = centralIconWrapper("server");
 // Handset glyph for the iOS Simulator dock pane.
 export const DeviceMobileIcon: LucideIcon = centralIconWrapper("phone");
+// Connections device rows: a paired iPad, and any paired computer.
+export const DeviceTabletIcon: LucideIcon = centralIconWrapper("tablet");
+export const DeviceComputerIcon: LucideIcon = centralIconWrapper("macbook");
 // Hardware-button glyphs for the simulator's control rail.
 export const DeviceHomeIcon: LucideIcon = centralIconWrapper("home");
 export const DeviceShutterIcon: LucideIcon = centralIconWrapper("camera-1");

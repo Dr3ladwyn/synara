@@ -584,41 +584,43 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   },
   // ── Connections ───────────────────────────────────────────────────────
   {
-    id: "connections:hosts",
+    id: "connections:this-computer",
     section: "connections",
-    title: "Hosts",
+    title: "Control this computer",
     keywords:
-      "Machines you can reach from this account. host server laptop reachable discoverable share workspace",
+      "Devices that can control this Mac or computer. allow connections add iphone ipad qr code pairing approve revoke access trusted devices",
     target: null,
   },
   {
-    id: "connections:connect",
+    id: "connections:keep-awake",
     section: "connections",
-    title: "Connect to a host",
+    title: "Keep this computer awake",
     keywords:
-      "Work on another machine from this window. connect open remote relay switch host back to this machine disconnect",
+      "Keep the Mac awake while plugged in and remote access is on. prevent sleep power battery",
     target: null,
   },
   {
-    id: "connections:this-machine",
+    id: "connections:other-computers",
     section: "connections",
-    title: "This machine",
-    keywords: "Unlink this machine from your account. host unlink sign out remove key local",
-    target: null,
-  },
-  {
-    id: "connections:device-code",
-    section: "connections",
-    title: "Device code",
-    keywords: "Link a headless machine with a short code. link approve vps ssh cli browserless",
-    target: null,
-  },
-  {
-    id: "connections:devices",
-    section: "connections",
-    title: "Devices",
+    title: "Control other devices",
     keywords:
-      "Devices signed in to your account, and revoking one. revoke sign out lost stolen last used",
+      "Computers you can control from this one. host server laptop connect open remote relay back to this computer disconnect forget pairing code share workspace discoverable",
+    target: null,
+  },
+  {
+    id: "connections:ssh",
+    section: "connections",
+    title: "SSH",
+    keywords:
+      "Link a headless machine with a short code, or forward the SSH port. device code link approve vps cli browserless",
+    target: null,
+  },
+  {
+    id: "connections:advanced",
+    section: "connections",
+    title: "Account devices and sessions",
+    keywords:
+      "Advanced: devices signed in to your account, active sessions, and unlinking this machine. revoke sign out lost stolen last used end session unlink",
     target: null,
   },
   {

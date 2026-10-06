@@ -76,7 +76,7 @@ Leggere in particolare:
 - packages/contracts/src/account.ts, remotePairing.ts e hostAuth.ts.
 - packages/shared/src/account.ts e transportRace.ts.
 - apps/api/src/routes/v1.ts, identity/hostKeyRegistry.ts, identity/revocationLog.ts, db/schema.ts e config.ts.
-- apps/web/src/components/settings/RemotePairingPanel.tsx e ConnectionsSettingsPanel.tsx.
+- apps/web/src/components/settings/ConnectionsSettingsPanel.tsx e i suoi tab (`Connections*.tsx`).
 - apps/desktop/src/remoteResourceBroker.ts e gli attuali owner del packaging/processo.
 - apps/e2e/src/harness/workspace.ts e workspace.e2e.test.ts.
 
