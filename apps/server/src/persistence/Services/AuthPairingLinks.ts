@@ -2,7 +2,11 @@ import { Option, Schema, ServiceMap } from "effect";
 import type { Effect } from "effect";
 
 import type { AuthPairingLinkRepositoryError } from "../Errors";
-import type { RemotePairingDevice, RemoteTrustScope } from "@synara/contracts";
+import type {
+  RemoteDeviceEnrollment,
+  RemotePairingDevice,
+  RemoteTrustScope,
+} from "@synara/contracts";
 
 export interface RemotePairingRecord {
   readonly id: string;
@@ -38,6 +42,17 @@ export interface RemotePairingRepositoryShape {
     scope: RemoteTrustScope,
     id: string,
     exactDeviceJkt: string,
+    now: string,
+    enrolledVia?: RemoteDeviceEnrollment,
+  ) => Effect.Effect<boolean, AuthPairingLinkRepositoryError>;
+  /**
+   * Records the device and approves it in one transaction (owner-grant pairing).
+   * Returns whether the device was recorded; approval may still be refused.
+   */
+  readonly enroll: (
+    scope: RemoteTrustScope,
+    id: string,
+    device: RemotePairingDevice,
     now: string,
   ) => Effect.Effect<boolean, AuthPairingLinkRepositoryError>;
   readonly revoke: (

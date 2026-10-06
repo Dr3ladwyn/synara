@@ -21,6 +21,21 @@ export interface RemoteDeviceTrustRepositoryShape {
     deviceJkt: string,
     now: string,
   ) => Effect.Effect<void, PersistenceSqlError>;
+  /** Owner switch: off refuses sessions and closes live ones, keeping every approval. */
+  readonly setAllowConnections: (
+    scope: RemoteTrustScope,
+    allowed: boolean,
+  ) => Effect.Effect<void, PersistenceSqlError>;
+  readonly allowsConnections: (
+    scope: RemoteTrustScope,
+  ) => Effect.Effect<boolean, PersistenceSqlError>;
+  /** Best-effort bookkeeping for the owner's device list. */
+  readonly markConnected: (
+    scope: RemoteTrustScope,
+    deviceJkt: string,
+    now: string,
+  ) => Effect.Effect<void, PersistenceSqlError>;
+  /** Permanent: revokes every device. Use setAllowConnections for the owner switch. */
   readonly disable: (
     scope: RemoteTrustScope,
     now: string,

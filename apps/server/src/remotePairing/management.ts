@@ -322,6 +322,7 @@ export function makeRemoteAccessManagement(
             new X509Certificate(identity.rootCertificate).validTo,
           ).toISOString(),
           rootNeedsRepair: remoteTlsRootNeedsRepair(identity),
+          allowConnections: await Effect.runPromise(options.devices.allowsConnections(scope)),
         };
       case "approve":
         if (
@@ -338,6 +339,9 @@ export function makeRemoteAccessManagement(
         await client
           .cancelRemotePairingCode(await hostProof(), account.hostId, request.inviteId)
           .catch(() => {});
+        return { kind: "done" };
+      case "set-allow-connections":
+        await Effect.runPromise(options.devices.setAllowConnections(scope, request.enabled));
         return { kind: "done" };
       case "revoke-device":
         await Effect.runPromise(

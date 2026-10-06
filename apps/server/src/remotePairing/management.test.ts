@@ -1,8 +1,15 @@
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { Effect } from "effect";
 import { generateKeyPair, exportJWK, calculateJwkThumbprint } from "jose";
 import { beforeEach, expect, it, vi } from "vitest";
 import { EnvironmentId, type RemotePairingBundle } from "@synara/contracts";
+import {
+  initializeRemoteTlsIdentity,
+  remoteTlsIdentityPath,
+} from "../remoteTransport/certificates";
 import { makeRemoteAccessManagement, type RemoteAccessManagementOptions } from "./management";
 
 const mocks = vi.hoisted(() => ({
@@ -144,4 +151,54 @@ it("serializes pairing before async setup and waits for cancellation before forg
   expect(mocks.pair).not.toHaveBeenCalled();
   expect(h.hosts.confirm).not.toHaveBeenCalled();
   expect(h.hosts.forget).toHaveBeenCalledTimes(1);
+});
+
+it("reports and switches the owner's Allow connections setting without touching devices", async () => {
+  const secretsDir = await mkdtemp(path.join(tmpdir(), "synara-allow-"));
+  try {
+    await initializeRemoteTlsIdentity(remoteTlsIdentityPath(secretsDir), "controller");
+    mocks.readAccount.mockResolvedValue({
+      accountUrl: "https://account.example.test",
+      userId: "owner",
+      organizationId: "org",
+      hostId: "host",
+      hostOwnerUserId: "owner",
+    });
+    let allowed = true;
+    const devices = {
+      list: vi.fn(() => Effect.succeed([])),
+      allowsConnections: vi.fn(() => Effect.sync(() => allowed)),
+      setAllowConnections: vi.fn((_scope: unknown, enabled: boolean) =>
+        Effect.sync(() => {
+          allowed = enabled;
+        }),
+      ),
+      revoke: vi.fn(() => Effect.void),
+    };
+    const manage = makeRemoteAccessManagement({
+      config: { baseDir: "/unused", stateDir: "/unused", secretsDir },
+      environment: {
+        getDescriptor: Effect.succeed({
+          environmentId: EnvironmentId.makeUnsafe("controller"),
+          label: "Mac Mini",
+        }),
+      },
+      control: { remotePairing: { list: () => Effect.succeed([]) } },
+      devices,
+    } as unknown as RemoteAccessManagementOptions);
+    const signal = new AbortController().signal;
+    await expect(manage({ operation: "list" }, signal)).resolves.toMatchObject({
+      kind: "host-state",
+      allowConnections: true,
+    });
+    await expect(
+      manage({ operation: "set-allow-connections", enabled: false }, signal),
+    ).resolves.toEqual({ kind: "done" });
+    await expect(manage({ operation: "list" }, signal)).resolves.toMatchObject({
+      allowConnections: false,
+    });
+    expect(devices.revoke).not.toHaveBeenCalled();
+  } finally {
+    await rm(secretsDir, { recursive: true, force: true });
+  }
 });

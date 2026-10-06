@@ -10,10 +10,18 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { EnvironmentId, type RemotePairingDevice, type RemoteTrustScope } from "@synara/contracts";
+import {
+  EnvironmentId,
+  GRANT_JWT_TYP,
+  HOST_CONNECT_SCOPE,
+  SYNARA_RELAY_AUDIENCE,
+  type RemotePairingDevice,
+  type RemoteTrustScope,
+} from "@synara/contracts";
 import { Effect, Layer } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
-import { calculateJwkThumbprint, exportJWK, generateKeyPair } from "jose";
+import { calculateJwkThumbprint, exportJWK, generateKeyPair, SignJWT } from "jose";
+import { HostGrantVerifier } from "../../hostAuth/grantVerifier";
 import { describe, expect, it, vi } from "vitest";
 import { ServerConfig } from "../../config";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite";
@@ -320,5 +328,199 @@ describe("remote pairing through the durable auth control plane", () => {
     } finally {
       await fs.rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it("pauses connections without forgetting devices and keeps the switch across approvals", async () => {
+    const peer = await device();
+    const other = await device();
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const control = yield* AuthControlPlane;
+        const trust = yield* RemoteDeviceTrustRepository;
+        const invite = yield* control.remotePairing.create(scope);
+        yield* control.remotePairing.requestApproval(scope, invite.inviteId, peer);
+        yield* control.remotePairing.approve(scope, invite.inviteId, peer.deviceJkt);
+        expect(yield* trust.allowsConnections(scope)).toBe(true);
+        const closed: Array<string | undefined> = [];
+        const unsubscribe = trust.onRevoked((_scope, jkt) => closed.push(jkt));
+        yield* trust.setAllowConnections(scope, false);
+        unsubscribe();
+        expect(closed).toEqual([peer.deviceJkt]);
+        expect(yield* trust.allowsConnections(scope)).toBe(false);
+        expect(yield* trust.authorize(scope, peer.deviceJkt)).toBeUndefined();
+        // A later approval must not silently turn the owner's switch back on.
+        const second = yield* control.remotePairing.create(scope);
+        yield* control.remotePairing.requestApproval(scope, second.inviteId, other);
+        yield* control.remotePairing.approve(scope, second.inviteId, other.deviceJkt);
+        expect(yield* trust.authorize(scope, other.deviceJkt)).toBeUndefined();
+        const devices = yield* trust.list(scope);
+        expect(devices.map((entry) => [entry.revokedAt, entry.enrolledVia])).toEqual([
+          [null, "approval"],
+          [null, "approval"],
+        ]);
+        yield* trust.setAllowConnections(scope, true);
+        expect((yield* trust.authorize(scope, peer.deviceJkt))?.generation).toBe(1);
+        yield* trust.markConnected(scope, peer.deviceJkt, "2026-10-06T12:00:00.000Z");
+        expect(
+          (yield* trust.list(scope)).find((entry) => entry.deviceJkt === peer.deviceJkt)
+            ?.lastConnectedAt,
+        ).toBe("2026-10-06T12:00:00.000Z");
+      }).pipe(Effect.provide(layers()), Effect.scoped),
+    );
+  });
+
+  describe("owner-grant pairing", () => {
+    const hostId = "10000000-0000-4000-8000-000000000001";
+    const apiIssuer = "https://accounts.example.test/api/v1";
+
+    async function pairWithGrant(input: {
+      grant: (deviceJkt: string, apiKey: CryptoKey) => Promise<string>;
+      allowConnections?: boolean;
+    }) {
+      const directory = await fs.mkdtemp(path.join(os.tmpdir(), "synara-grant-pair-"));
+      const identity = await initializeRemoteTlsIdentity(
+        path.join(directory, "tls.json"),
+        scope.environmentId,
+      );
+      const anchor = remoteTlsAnchor(identity);
+      const pairingScope = { ...scope, rootFingerprint: anchor.rootFingerprint };
+      const key = await generateDeviceKey();
+      const publicJwk = await exportPublicJwk(key);
+      const deviceJkt = await calculateJwkThumbprint(publicJwk);
+      const api = await generateKeyPair("EdDSA", { extractable: true });
+      const apiJwk = await exportJWK(api.publicKey);
+      const grants = new HostGrantVerifier({
+        apiIssuer,
+        environmentId: scope.environmentId,
+        hostId,
+        ownerUserId: scope.userId,
+        getApiJwks: async () => ({
+          keys: [
+            { kty: "OKP", crv: "Ed25519", x: apiJwk.x!, kid: "api-1", alg: "EdDSA", use: "sig" },
+          ],
+        }),
+      });
+      try {
+        return await Effect.runPromise(
+          Effect.gen(function* () {
+            const control = yield* AuthControlPlane;
+            const trust = yield* RemoteDeviceTrustRepository;
+            if (input.allowConnections === false)
+              yield* trust.setAllowConnections(pairingScope, false);
+            const invitation = yield* control.remotePairing.create(pairingScope);
+            return yield* Effect.promise(async () => {
+              const server = http.createServer((_request, response) => response.end("ok"));
+              const websocket = new WebSocketServer({ server, perMessageDeflate: false });
+              const tunnel = new RemoteTlsServer({
+                identity,
+                accept: (socket) =>
+                  acceptRemotePairing(socket, pairingScope, control.remotePairing, trust, grants),
+              });
+              websocket.on("connection", (socket) => tunnel.accept(socket));
+              server.listen(0, "127.0.0.1");
+              await once(server, "listening");
+              const address = server.address() as { port: number };
+              const abort = new AbortController();
+              let routed = 0;
+              let pairing: Promise<"approved" | Error> | undefined;
+              try {
+                pairing = pairRemoteHost({
+                  host: {
+                    id: hostId,
+                    environmentId: scope.environmentId,
+                    endpoints: [{ url: `http://127.0.0.1:${address.port}`, transport: "lan" }],
+                  },
+                  anchor,
+                  bundle: {
+                    v: 2,
+                    ...pairingScope,
+                    ...anchor,
+                    environmentId: scope.environmentId,
+                    ...invitation,
+                    hostId,
+                    label: "Host",
+                    channel: "dev",
+                  },
+                  identity: { userId: scope.userId, key, publicJwk },
+                  label: "Owner phone",
+                  signal: abort.signal,
+                  // The first grant only routes the channel; the next one rides in the proof.
+                  requestGrant: async () =>
+                    routed++ === 0 ? "routing-only-grant" : input.grant(deviceJkt, api.privateKey),
+                }).then(
+                  () => "approved" as const,
+                  (error: Error) => error,
+                );
+                await vi.waitFor(async () => {
+                  const pending = await Effect.runPromise(control.remotePairing.list(pairingScope));
+                  expect(pending[0]?.pendingDevice?.deviceJkt).toBe(deviceJkt);
+                });
+                const outcome = await Promise.race([
+                  pairing,
+                  new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 300)),
+                ]);
+                return {
+                  outcome,
+                  devices: await Effect.runPromise(trust.list(pairingScope)),
+                  authorized: await Effect.runPromise(trust.authorize(pairingScope, deviceJkt)),
+                };
+              } finally {
+                abort.abort();
+                await pairing;
+                tunnel.close();
+                for (const socket of websocket.clients) socket.terminate();
+                websocket.close();
+                server.closeAllConnections();
+                await new Promise<void>((resolve) => server.close(() => resolve()));
+              }
+            });
+          }).pipe(Effect.provide(layers()), Effect.scoped),
+        );
+      } finally {
+        await fs.rm(directory, { recursive: true, force: true });
+      }
+    }
+
+    const ownerGrant =
+      (overrides: { jkt?: string; sub?: string } = {}) =>
+      (deviceJkt: string, apiKey: CryptoKey) =>
+        new SignJWT({
+          hostId,
+          environmentId: scope.environmentId,
+          cnf: { jkt: overrides.jkt ?? deviceJkt },
+          scope: [HOST_CONNECT_SCOPE],
+        })
+          .setProtectedHeader({ alg: "EdDSA", typ: GRANT_JWT_TYP, kid: "api-1" })
+          .setIssuer(apiIssuer)
+          .setSubject(overrides.sub ?? scope.userId)
+          .setAudience(SYNARA_RELAY_AUDIENCE)
+          .setIssuedAt()
+          .setExpirationTime("60s")
+          .setJti(crypto.randomUUID())
+          .sign(apiKey);
+
+    it("approves the owner's own device in one step", async () => {
+      const result = await pairWithGrant({ grant: ownerGrant() });
+      expect(result.outcome).toBe("approved");
+      expect(result.authorized?.generation).toBe(1);
+      expect(result.devices.map((entry) => entry.enrolledVia)).toEqual(["qr"]);
+    });
+
+    it.each([
+      ["no grant", () => Promise.reject(new Error("grant unavailable"))],
+      ["a grant for another key", ownerGrant({ jkt: "another-device" })],
+      ["another account's grant", ownerGrant({ sub: "someone-else" })],
+    ])("keeps owner approval for %s", async (_label, grant) => {
+      const result = await pairWithGrant({ grant });
+      expect(result.outcome).toBe("pending");
+      expect(result.authorized).toBeUndefined();
+      expect(result.devices).toEqual([]);
+    });
+
+    it("does not auto-approve while connections are off", async () => {
+      const result = await pairWithGrant({ grant: ownerGrant(), allowConnections: false });
+      expect(result.outcome).toBe("pending");
+      expect(result.devices).toEqual([]);
+    });
   });
 });

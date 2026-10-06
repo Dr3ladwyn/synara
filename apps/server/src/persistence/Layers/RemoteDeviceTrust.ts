@@ -7,6 +7,20 @@ import {
   type RemoteDeviceTrustRepositoryShape,
 } from "../Services/RemoteDeviceTrust";
 
+interface DeviceRow {
+  deviceJkt: string;
+  publicKey: string;
+  label: string;
+  generation: number;
+  approvedAt: string;
+  revokedAt: string | null;
+  enrolledVia: string;
+  lastConnectedAt: string | null;
+}
+
+const decodeDevice = (row: DeviceRow) =>
+  Schema.decodeUnknownSync(RemoteTrustedDevice)({ ...row, publicKey: JSON.parse(row.publicKey) });
+
 export const makeRemoteDeviceTrustRepository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const listeners = new Set<(scope: RemoteTrustScope, jkt?: string) => void>();
@@ -21,59 +35,31 @@ export const makeRemoteDeviceTrustRepository = Effect.gen(function* () {
   };
   const list: RemoteDeviceTrustRepositoryShape["list"] = (scope) =>
     Effect.gen(function* () {
-      const rows = yield* sql<{
-        deviceJkt: string;
-        publicKey: string;
-        label: string;
-        generation: number;
-        approvedAt: string;
-        revokedAt: string | null;
-      }>`
+      const rows = yield* sql<DeviceRow>`
       SELECT device_jkt AS "deviceJkt", device_public_key AS "publicKey", label, generation,
-        approved_at AS "approvedAt", revoked_at AS "revokedAt"
+        approved_at AS "approvedAt", revoked_at AS "revokedAt", enrolled_via AS "enrolledVia",
+        last_connected_at AS "lastConnectedAt"
       FROM remote_device_trust WHERE environment_id = ${scope.environmentId}
         AND root_fingerprint = ${scope.rootFingerprint} AND account_authority = ${scope.accountAuthority}
         AND owner_user_id = ${scope.userId} AND organization_id = ${scope.organizationId}
       ORDER BY approved_at, device_jkt`;
-      return yield* Effect.try({
-        try: () =>
-          rows.map((row) =>
-            Schema.decodeUnknownSync(RemoteTrustedDevice)({
-              ...row,
-              publicKey: JSON.parse(row.publicKey),
-            }),
-          ),
-        catch: (cause) => cause,
-      });
+      return yield* Effect.try({ try: () => rows.map(decodeDevice), catch: (cause) => cause });
     }).pipe(Effect.mapError(toPersistenceSqlError("RemoteDeviceTrust.list")));
   const authorize: RemoteDeviceTrustRepositoryShape["authorize"] = (scope, jkt, generation) =>
     Effect.gen(function* () {
-      const rows = yield* sql<{
-        deviceJkt: string;
-        publicKey: string;
-        label: string;
-        generation: number;
-        approvedAt: string;
-        revokedAt: string | null;
-      }>`
+      const rows = yield* sql<DeviceRow>`
       SELECT t.device_jkt AS "deviceJkt", t.device_public_key AS "publicKey", t.label, t.generation,
-        t.approved_at AS "approvedAt", t.revoked_at AS "revokedAt"
+        t.approved_at AS "approvedAt", t.revoked_at AS "revokedAt", t.enrolled_via AS "enrolledVia",
+        t.last_connected_at AS "lastConnectedAt"
       FROM remote_device_trust t JOIN remote_access_state s
         ON s.environment_id = t.environment_id AND s.root_fingerprint = t.root_fingerprint
-      WHERE s.enabled = 1 AND t.environment_id = ${scope.environmentId} AND t.root_fingerprint = ${scope.rootFingerprint}
+      WHERE s.enabled = 1 AND s.allow_connections = 1 AND t.environment_id = ${scope.environmentId} AND t.root_fingerprint = ${scope.rootFingerprint}
         AND t.account_authority = ${scope.accountAuthority} AND t.owner_user_id = ${scope.userId}
         AND t.organization_id = ${scope.organizationId} AND t.device_jkt = ${jkt} AND t.revoked_at IS NULL
         AND (${generation ?? null} IS NULL OR t.generation = ${generation ?? null}) LIMIT 1`;
       const row = rows[0];
       if (!row) return undefined;
-      return yield* Effect.try({
-        try: () =>
-          Schema.decodeUnknownSync(RemoteTrustedDevice)({
-            ...row,
-            publicKey: JSON.parse(row.publicKey),
-          }),
-        catch: (cause) => cause,
-      });
+      return yield* Effect.try({ try: () => decodeDevice(row), catch: (cause) => cause });
     }).pipe(Effect.mapError(toPersistenceSqlError("RemoteDeviceTrust.authorize")));
   const revoke: RemoteDeviceTrustRepositoryShape["revoke"] = (scope, jkt, now) =>
     sql`
@@ -98,6 +84,45 @@ export const makeRemoteDeviceTrustRepository = Effect.gen(function* () {
         Effect.mapError(toPersistenceSqlError("RemoteDeviceTrust.disable")),
         Effect.tap(() => Effect.sync(() => notify(scope))),
       );
+  const setAllowConnections: RemoteDeviceTrustRepositoryShape["setAllowConnections"] = (
+    scope,
+    allowed,
+  ) =>
+    Effect.gen(function* () {
+      // The row also marks an initialized identity, so a new row stays disabled
+      // until the first approval; the owner flag survives that approval.
+      yield* sql`INSERT INTO remote_access_state (environment_id, root_fingerprint, enabled, allow_connections)
+        VALUES (${scope.environmentId}, ${scope.rootFingerprint}, 0, ${allowed ? 1 : 0})
+        ON CONFLICT(environment_id, root_fingerprint) DO UPDATE SET allow_connections = excluded.allow_connections`;
+      if (allowed) return [];
+      return yield* sql<{ deviceJkt: string }>`
+        SELECT device_jkt AS "deviceJkt" FROM remote_device_trust
+        WHERE environment_id = ${scope.environmentId} AND root_fingerprint = ${scope.rootFingerprint}
+          AND account_authority = ${scope.accountAuthority} AND owner_user_id = ${scope.userId}
+          AND organization_id = ${scope.organizationId} AND revoked_at IS NULL`;
+    }).pipe(
+      Effect.mapError(toPersistenceSqlError("RemoteDeviceTrust.setAllowConnections")),
+      // Reuses the revocation listener to close live sessions; nothing is revoked.
+      Effect.tap((rows) =>
+        Effect.sync(() => {
+          for (const row of rows) notify(scope, row.deviceJkt);
+        }),
+      ),
+      Effect.asVoid,
+    );
+  const allowsConnections: RemoteDeviceTrustRepositoryShape["allowsConnections"] = (scope) =>
+    sql<{ allowed: number }>`SELECT allow_connections AS "allowed" FROM remote_access_state
+      WHERE environment_id = ${scope.environmentId} AND root_fingerprint = ${scope.rootFingerprint}`.pipe(
+      Effect.map((rows) => (rows[0]?.allowed ?? 1) === 1),
+      Effect.mapError(toPersistenceSqlError("RemoteDeviceTrust.allowsConnections")),
+    );
+  const markConnected: RemoteDeviceTrustRepositoryShape["markConnected"] = (scope, jkt, now) =>
+    sql`
+    UPDATE remote_device_trust SET last_connected_at = ${now}
+    WHERE environment_id = ${scope.environmentId} AND root_fingerprint = ${scope.rootFingerprint}
+      AND account_authority = ${scope.accountAuthority} AND owner_user_id = ${scope.userId}
+      AND organization_id = ${scope.organizationId} AND device_jkt = ${jkt} AND revoked_at IS NULL
+  `.pipe(Effect.mapError(toPersistenceSqlError("RemoteDeviceTrust.markConnected")), Effect.asVoid);
   const resetEnvironment: RemoteDeviceTrustRepositoryShape["resetEnvironment"] = (
     environmentId,
     now,
@@ -133,6 +158,9 @@ export const makeRemoteDeviceTrustRepository = Effect.gen(function* () {
     list,
     authorize,
     revoke,
+    setAllowConnections,
+    allowsConnections,
+    markConnected,
     disable,
     onRevoked: (listener) => {
       listeners.add(listener);

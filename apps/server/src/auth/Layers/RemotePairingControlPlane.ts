@@ -76,6 +76,11 @@ export function makeRemotePairingControlPlane(
         Effect.flatMap((currentTime) => repository.approve(scope, id, jkt, currentTime)),
         Effect.mapError(failed),
       ),
+    enroll: (scope, id, device) =>
+      now.pipe(
+        Effect.flatMap((currentTime) => repository.enroll(scope, id, device, currentTime)),
+        Effect.mapError(failed),
+      ),
     list: (scope) =>
       repository.list(scope).pipe(
         Effect.map((records) => records.map(status)),

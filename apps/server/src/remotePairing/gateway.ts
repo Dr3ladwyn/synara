@@ -8,16 +8,42 @@ import { Effect, Schema } from "effect";
 import { calculateJwkThumbprint, importJWK, jwtVerify } from "jose";
 import type WebSocket from "ws";
 import type { AuthControlPlaneShape } from "../auth/Services/AuthControlPlane";
+import { HostMintError, type HostGrantVerifier } from "../hostAuth/grantVerifier";
 import type { RemoteDeviceTrustRepositoryShape } from "../persistence/Services/RemoteDeviceTrust";
 
 export const REMOTE_PAIRING_PROOF_TYPE = "synara-remote-pairing+jwt";
 
-/** This gateway is only reachable inside authenticated host TLS; it exposes no coding RPC. */
+/** Spends the owner's account grant for this device key, or reports a generic refusal. */
+async function acceptOwnerGrant(
+  grants: HostGrantVerifier,
+  grant: string,
+  scope: RemoteTrustScope,
+  deviceJkt: string,
+): Promise<boolean> {
+  try {
+    grants.consume(await grants.verify(grant, { deviceJkt, subject: scope.userId }));
+    return true;
+  } catch (cause) {
+    // The device falls back to owner approval; never reveal why to it or log grant details.
+    const reason = cause instanceof HostMintError ? cause.code : "invalid_grant";
+    console.warn(
+      `[synara] Remote pairing grant not accepted (${reason}); owner approval required.`,
+    );
+    return false;
+  }
+}
+
+/**
+ * This gateway is only reachable inside authenticated host TLS; it exposes no coding RPC.
+ * A `pairing_proof` may carry `grant`, the owner's account grant for the pairing key:
+ * when it verifies and connections are allowed, the device is approved without a second step.
+ */
 export function acceptRemotePairing(
   socket: WebSocket,
   scope: RemoteTrustScope,
   pairing: AuthControlPlaneShape["remotePairing"],
   trust: RemoteDeviceTrustRepositoryShape,
+  grants?: HostGrantVerifier,
 ): void {
   let context:
     | { inviteId: string; device: RemotePairingDevice; nonce: string; expiresAt: number }
@@ -129,8 +155,16 @@ export function acceptRemotePairing(
             payload.exp - payload.iat > 60
           )
             throw new Error("Invalid pairing proof");
+          const ownerGrant =
+            typeof frame.grant === "string" &&
+            grants !== undefined &&
+            (await Effect.runPromise(trust.allowsConnections(scope))) &&
+            (await acceptOwnerGrant(grants, frame.grant, scope, context.device.deviceJkt));
+          if (closed) return;
           const recorded = await Effect.runPromise(
-            pairing.requestApproval(scope, context.inviteId, context.device),
+            ownerGrant
+              ? pairing.enroll(scope, context.inviteId, context.device)
+              : pairing.requestApproval(scope, context.inviteId, context.device),
           );
           if (closed) return;
           if (!recorded) throw new Error("Invitation is no longer available");

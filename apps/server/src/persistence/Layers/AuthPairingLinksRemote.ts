@@ -91,7 +91,13 @@ export function makeRemotePairingQueries(sql: SqlClient): RemotePairingRepositor
         }),
       )
       .pipe(Effect.mapError(toPersistenceSqlError("AuthPairingLinks.remote.requestApproval")));
-  const approve: RemotePairingRepositoryShape["approve"] = (scope, id, jkt, now) =>
+  const approve: RemotePairingRepositoryShape["approve"] = (
+    scope,
+    id,
+    jkt,
+    now,
+    enrolledVia = "approval",
+  ) =>
     sql
       .withTransaction(
         Effect.gen(function* () {
@@ -112,13 +118,15 @@ export function makeRemotePairingQueries(sql: SqlClient): RemotePairingRepositor
           const changed =
             yield* sql`UPDATE auth_pairing_links SET consumed_at = ${now} WHERE id = ${id} AND purpose = 'remote-device' AND pending_device_jkt = ${jkt} AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at > ${now} RETURNING id`;
           if (changed.length !== 1) return false;
-          yield* sql`INSERT INTO remote_device_trust (environment_id, root_fingerprint, device_jkt, device_public_key, account_authority, owner_user_id, organization_id, label, generation, approved_at, approved_invite_id, revoked_at)
-      VALUES (${scope.environmentId}, ${scope.rootFingerprint}, ${jkt}, ${JSON.stringify(record.pendingDevice.publicKey)}, ${scope.accountAuthority}, ${scope.userId}, ${scope.organizationId}, ${record.pendingDevice.label}, 1, ${now}, ${id}, NULL)
+          yield* sql`INSERT INTO remote_device_trust (environment_id, root_fingerprint, device_jkt, device_public_key, account_authority, owner_user_id, organization_id, label, generation, approved_at, approved_invite_id, revoked_at, enrolled_via)
+      VALUES (${scope.environmentId}, ${scope.rootFingerprint}, ${jkt}, ${JSON.stringify(record.pendingDevice.publicKey)}, ${scope.accountAuthority}, ${scope.userId}, ${scope.organizationId}, ${record.pendingDevice.label}, 1, ${now}, ${id}, NULL, ${enrolledVia})
       ON CONFLICT(environment_id, root_fingerprint, device_jkt) DO UPDATE SET
         device_public_key = excluded.device_public_key, account_authority = excluded.account_authority,
         owner_user_id = excluded.owner_user_id, organization_id = excluded.organization_id,
         label = excluded.label, generation = remote_device_trust.generation + 1,
-        approved_at = excluded.approved_at, approved_invite_id = excluded.approved_invite_id, revoked_at = NULL`;
+        approved_at = excluded.approved_at, approved_invite_id = excluded.approved_invite_id, revoked_at = NULL,
+        enrolled_via = excluded.enrolled_via`;
+          // `enabled` marks a live identity; the owner's allow_connections switch is left untouched.
           yield* sql`INSERT INTO remote_access_state (environment_id, root_fingerprint, enabled) VALUES (${scope.environmentId}, ${scope.rootFingerprint}, 1)
       ON CONFLICT(environment_id, root_fingerprint) DO UPDATE SET enabled = 1`;
           return true;
@@ -134,5 +142,15 @@ export function makeRemotePairingQueries(sql: SqlClient): RemotePairingRepositor
         }),
       )
       .pipe(Effect.mapError(toPersistenceSqlError("AuthPairingLinks.remote.revoke")));
-  return { create, get, list: (scope) => query(scope), requestApproval, approve, revoke };
+  const enroll: RemotePairingRepositoryShape["enroll"] = (scope, id, device, now) =>
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          if (!(yield* requestApproval(scope, id, device, now))) return false;
+          yield* approve(scope, id, device.deviceJkt, now, "qr");
+          return true;
+        }),
+      )
+      .pipe(Effect.mapError(toPersistenceSqlError("AuthPairingLinks.remote.enroll")));
+  return { create, get, list: (scope) => query(scope), requestApproval, approve, enroll, revoke };
 }

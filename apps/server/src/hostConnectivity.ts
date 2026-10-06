@@ -36,7 +36,7 @@ import {
 import type { SessionCredentialServiceShape } from "./auth/Services/SessionCredentialService";
 import type { ServerConfigShape } from "./config";
 import { startEndpointReporter } from "./endpointReporter";
-import { ApiJwksCache, HostMintService } from "./hostAuth";
+import { ApiJwksCache, HostGrantVerifier, HostMintService } from "./hostAuth";
 import { mintHostProof, readHostIdentity } from "./hostIdentity";
 import { MAX_WEBSOCKET_MESSAGE_BYTES } from "./nodeHttpServer";
 import {
@@ -137,16 +137,28 @@ export async function startHostConnectivity(
   };
   const remoteSessions = options.remoteSessions;
   const apiJwks = new ApiJwksCache(() => client.getApiJwks());
-  const mintService = new HostMintService({
-    identity,
+  const grantOptions = {
     apiIssuer: accountApiIssuer(credentials.accountUrl),
     environmentId,
     hostId: credentials.hostId,
-    keyGeneration: credentials.hostKeyGeneration,
     ownerUserId: credentials.hostOwnerUserId,
-    authorizeDevice,
     getApiJwks: () => apiJwks.get(),
     refreshApiJwksForUnknownKid: () => apiJwks.refreshForUnknownKid(),
+  };
+  // Minting and owner-grant pairing share one replay cache.
+  const grants = new HostGrantVerifier(grantOptions);
+  const mintService = new HostMintService({
+    ...grantOptions,
+    grants,
+    identity,
+    keyGeneration: credentials.hostKeyGeneration,
+    authorizeDevice: async (userId, deviceJkt) => {
+      const generation = await authorizeDevice(userId, deviceJkt);
+      void Effect.runPromise(
+        options.remoteTrust.markConnected(trustScope, deviceJkt, new Date().toISOString()),
+      ).catch(() => {});
+      return generation;
+    },
   });
   const gateway = new RemoteConnectionGateway({
     mintService,
@@ -216,6 +228,7 @@ export async function startHostConnectivity(
             trustScope,
             options.authControlPlane.remotePairing,
             options.remoteTrust,
+            grants,
           );
           return;
         }

@@ -57,6 +57,10 @@ export async function pairRemoteHost(
     );
     if (typeof challenge.nonce !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(challenge.nonce))
       throw new Error("Invalid host pairing challenge");
+    // The owner's account grant for this key lets the host approve without a second step;
+    // without one the host falls back to manual owner approval.
+    const grant = await input.requestGrant().catch(() => undefined);
+    signal.throwIfAborted();
     const proof = await new SignJWT({ nonce: challenge.nonce, inviteId: bundle.inviteId })
       .setProtectedHeader({ alg: "ES256", typ: REMOTE_PAIRING_PROOF_TYPE })
       .setIssuer("synara-device")
@@ -68,7 +72,7 @@ export async function pairRemoteHost(
       .sign("privateKey" in identity.key ? identity.key.privateKey : identity.key);
     let status = await exchangeRemoteFrame(
       socket,
-      { v: 2, type: "pairing_proof", proof },
+      { v: 2, type: "pairing_proof", proof, ...(grant ? { grant } : {}) },
       "pairing_status",
       signal,
     );

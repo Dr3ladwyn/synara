@@ -639,6 +639,7 @@ managedAttachmentsLegacyLayer("managed attachment migration after private migrat
         [132, "AccountUsageSyncIdentity"],
         [133, "RemoteDeviceTrust"],
         [134, "RemoteConnectionPreferences"],
+        [135, "RemoteAccessControls"],
       ]);
 
       const tracker = yield* trackerRows(sql);
@@ -725,6 +726,7 @@ managedAttachmentsLegacyLayer("managed attachment migration after private migrat
           { migration_id: 132, name: "AccountUsageSyncIdentity" },
           { migration_id: 133, name: "RemoteDeviceTrust" },
           { migration_id: 134, name: "RemoteConnectionPreferences" },
+          { migration_id: 135, name: "RemoteAccessControls" },
         ],
       );
       const groupConfigColumns = yield* sql<{ readonly name: string }>`
@@ -891,6 +893,7 @@ agentGatewayRetentionLegacyLayer(
           [132, "AccountUsageSyncIdentity"],
           [133, "RemoteDeviceTrust"],
           [134, "RemoteConnectionPreferences"],
+          [135, "RemoteAccessControls"],
         ]);
 
         const columns = yield* sql<{ readonly name: string }>`
@@ -1020,6 +1023,7 @@ spacesMigrationCollisionLayer("Spaces migration after the private migration 70 c
         [132, "AccountUsageSyncIdentity"],
         [133, "RemoteDeviceTrust"],
         [134, "RemoteConnectionPreferences"],
+        [135, "RemoteAccessControls"],
       ]);
 
       const tracker = yield* trackerRows(sql);
@@ -1090,6 +1094,7 @@ spacesMigrationCollisionLayer("Spaces migration after the private migration 70 c
           [132, "AccountUsageSyncIdentity"],
           [133, "RemoteDeviceTrust"],
           [134, "RemoteConnectionPreferences"],
+          [135, "RemoteAccessControls"],
         ],
       );
 
@@ -1214,6 +1219,7 @@ spacesMigrationCollisionLayer("Spaces migration after the private migration 70 c
         [132, "AccountUsageSyncIdentity"],
         [133, "RemoteDeviceTrust"],
         [134, "RemoteConnectionPreferences"],
+        [135, "RemoteAccessControls"],
       ]);
 
       const tracker = yield* trackerRows(sql);
@@ -1280,6 +1286,7 @@ spacesMigrationCollisionLayer("Spaces migration after the private migration 70 c
           [132, "AccountUsageSyncIdentity"],
           [133, "RemoteDeviceTrust"],
           [134, "RemoteConnectionPreferences"],
+          [135, "RemoteAccessControls"],
         ],
       );
       const preservedSpaces = yield* sql<{ readonly spaceId: string }>`
@@ -1598,8 +1605,15 @@ layer("historical account upgrades", (it) => {
           );
           assert.deepStrictEqual(yield* sql`SELECT * FROM account_usage_sync`, account);
           assert.deepStrictEqual(yield* sql`SELECT * FROM remote_host_trust`, hosts);
-          assert.deepStrictEqual(yield* sql`SELECT * FROM remote_device_trust`, devices);
-          assert.deepStrictEqual(yield* sql`SELECT * FROM remote_access_state`, access);
+          // RemoteAccessControls only adds columns with defaults that keep today's behaviour.
+          assert.deepStrictEqual(
+            yield* sql`SELECT * FROM remote_device_trust`,
+            devices.map((row) => ({ ...row, enrolled_via: "approval", last_connected_at: null })),
+          );
+          assert.deepStrictEqual(
+            yield* sql`SELECT * FROM remote_access_state`,
+            access.map((row) => ({ ...row, allow_connections: 1 })),
+          );
           assert.deepStrictEqual(yield* sql`SELECT * FROM auth_pairing_links`, pairing);
           assert.deepStrictEqual(yield* sql`SELECT * FROM auth_sessions`, sessions);
           assert.deepStrictEqual(

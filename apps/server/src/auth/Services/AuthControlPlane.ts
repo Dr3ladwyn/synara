@@ -60,6 +60,12 @@ export interface AuthControlPlaneShape {
       inviteId: string,
       exactDeviceJkt: string,
     ) => Effect.Effect<boolean, AuthControlPlaneError>;
+    /** Records and approves in one step; only for a device holding a verified owner grant. */
+    readonly enroll: (
+      scope: RemoteTrustScope,
+      inviteId: string,
+      device: RemotePairingDevice,
+    ) => Effect.Effect<boolean, AuthControlPlaneError>;
     readonly list: (
       scope: RemoteTrustScope,
     ) => Effect.Effect<readonly RemotePairingStatus[], AuthControlPlaneError>;
