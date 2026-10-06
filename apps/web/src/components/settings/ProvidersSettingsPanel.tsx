@@ -84,6 +84,7 @@ import {
 } from "~/lib/providerSetupStatus";
 import {
   hasReconciledServerProviderStatuses,
+  serverAllProviderUsageQueryOptions,
   serverConfigQueryOptions,
   serverQueryKeys,
   serverSettingsQueryOptions,
@@ -993,6 +994,19 @@ function ProviderAccountsControl(props: {
 }) {
   const provider = props.config.provider;
   const providerLabel = PROVIDER_DISPLAY_NAMES[provider];
+  const usageQuery = useQuery(
+    serverAllProviderUsageQueryOptions({ enabled: provider === "claudeAgent" }),
+  );
+  const usageByInstance = useMemo(
+    () =>
+      new Map(
+        (usageQuery.data ?? []).map((snapshot) => [
+          snapshot.instanceId ?? snapshot.provider,
+          snapshot,
+        ]),
+      ),
+    [usageQuery.data],
+  );
   const allAccounts = getProviderInstanceOptions(props.settings);
   // Default first, then the provider's other accounts by name.
   const accounts = allAccounts.filter((account) => account.provider === provider);
@@ -1127,17 +1141,11 @@ function ProviderAccountsControl(props: {
     );
     if (settingsPatch) props.updateSettings(settingsPatch);
   };
-  // The default account cannot be removed; this drops what was customized on it and
-  // leaves the launch overrides (custom models, environment) that live beside them.
+  // Restore appearance and enablement while retaining the account's name and launch overrides.
   const resetDefaultAccount = () => {
     const explicit = props.settings.providerInstances[provider];
     if (!explicit) return;
-    const {
-      displayName: _displayName,
-      accentColor: _accentColor,
-      enabled: _enabled,
-      ...rest
-    } = explicit;
+    const { accentColor: _accentColor, enabled: _enabled, ...rest } = explicit;
     const next = { ...props.settings.providerInstances } as Record<string, ProviderInstanceConfig>;
     if (Object.keys(rest).length > 1) {
       next[provider] = rest;
@@ -1387,7 +1395,11 @@ function ProviderAccountsControl(props: {
     const explicit = props.settings.providerInstances[instanceId];
     const legacyCodexAccountId = manageable?.legacyCodexAccountId ?? null;
     const liveStatus = props.providerStatusByInstance.get(instanceId);
-    const status = providerAccountStatusSummary({ status: liveStatus, enabled: account.enabled });
+    const status = providerAccountStatusSummary({
+      status: liveStatus,
+      enabled: account.enabled,
+      usageSnapshot: usageByInstance.get(instanceId),
+    });
     const cliCommand = account.isDefault
       ? provider === "claudeAgent"
         ? "claude"
@@ -1405,9 +1417,7 @@ function ProviderAccountsControl(props: {
     const defaultIsCustomized =
       account.isDefault &&
       explicit !== undefined &&
-      (explicit.displayName !== undefined ||
-        explicit.accentColor !== undefined ||
-        explicit.enabled === false);
+      (explicit.accentColor !== undefined || explicit.enabled === false);
     return (
       <div
         className={cn(
@@ -1617,6 +1627,7 @@ function ProviderAccountsControl(props: {
             const status = providerAccountStatusSummary({
               status: props.providerStatusByInstance.get(account.instanceId),
               enabled: account.enabled,
+              usageSnapshot: usageByInstance.get(account.instanceId),
             });
             return (
               <div
