@@ -40,11 +40,21 @@ export const RemotePairingStatus = Schema.Struct({
 });
 export type RemotePairingStatus = typeof RemotePairingStatus.Type;
 
+/**
+ * How a device gained access: an explicit owner approval, a scanned owner QR
+ * with the owner's account grant, or automatic enrolment of the owner's own
+ * signed-in device. Optional so older hosts still decode.
+ */
+export const RemoteDeviceEnrollment = Schema.Literals(["approval", "qr", "account"]);
+export type RemoteDeviceEnrollment = typeof RemoteDeviceEnrollment.Type;
+
 export const RemoteTrustedDevice = Schema.Struct({
   ...RemotePairingDevice.fields,
   generation: Schema.Int.check(Schema.isGreaterThan(0)),
   approvedAt: IsoDateTime,
   revokedAt: Schema.NullOr(IsoDateTime),
+  enrolledVia: Schema.optional(RemoteDeviceEnrollment),
+  lastConnectedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
 });
 export type RemoteTrustedDevice = typeof RemoteTrustedDevice.Type;
 
@@ -73,6 +83,8 @@ export const RemoteAccessRequest = Schema.Union([
     deviceJkt: boundedTrimmedNonEmptyString(128),
   }),
   Schema.Struct({ operation: Schema.Literal("cancel-invitation"), inviteId: Schema.String }),
+  /** Owner switch: off refuses new and existing remote sessions without forgetting devices. */
+  Schema.Struct({ operation: Schema.Literal("set-allow-connections"), enabled: Schema.Boolean }),
   Schema.Struct({
     operation: Schema.Literal("revoke-device"),
     deviceJkt: boundedTrimmedNonEmptyString(128),
@@ -117,6 +129,8 @@ export const RemoteAccessResult = Schema.Union([
     rootFingerprint: Schema.optional(Schema.String),
     rootExpiresAt: Schema.NullOr(IsoDateTime),
     rootNeedsRepair: Schema.Boolean,
+    /** Absent on hosts that predate the owner switch. */
+    allowConnections: Schema.optional(Schema.Boolean),
   }),
   Schema.Struct({
     kind: Schema.Literal("paired"),
