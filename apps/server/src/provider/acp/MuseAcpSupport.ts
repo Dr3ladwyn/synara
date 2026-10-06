@@ -95,6 +95,40 @@ export function museModels(
   }));
 }
 
+// Run only on the disposable discovery session. Muse exposes effort choices
+// for its selected model; switching here never changes the user's live thread.
+export function discoverMuseModels(
+  runtime: Pick<AcpSessionRuntimeShape, "getConfigOptions" | "setModel">,
+): Effect.Effect<ProviderModelDescriptor[], AcpErrors.AcpError> {
+  return Effect.gen(function* () {
+    const initial = yield* runtime.getConfigOptions;
+    const selector = initial.find((option) => option.category === "model");
+    if (!selector || selector.type !== "select") return [];
+    const initialModels = museModels(initial);
+    const selected = initialModels.find((model) => model.slug === selector.currentValue);
+    const models: ProviderModelDescriptor[] = selected
+      ? [Object.assign({}, selected, { slug: "default", name: "Muse default" })]
+      : [];
+    let currentModel = selector.currentValue;
+    for (const model of initialModels) {
+      if (model.slug !== currentModel) {
+        yield* runtime.setModel(model.slug);
+        currentModel = model.slug;
+      }
+      const options = yield* runtime.getConfigOptions;
+      const descriptor = museModels(options).find((candidate) => candidate.slug === model.slug);
+      if (!descriptor) {
+        return yield* new AcpErrors.AcpRequestError({
+          code: -32603,
+          errorMessage: `Muse did not return configuration for model ${model.slug}.`,
+        });
+      }
+      models.push(descriptor);
+    }
+    return models;
+  });
+}
+
 export function configureMuse(
   runtime: Pick<AcpSessionRuntimeShape, "setModel" | "setMode" | "setConfigOption">,
   model: string | undefined,

@@ -1,8 +1,57 @@
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
-import { buildMuseSpawnInput, configureMuse, museModels } from "./MuseAcpSupport.ts";
+import {
+  buildMuseSpawnInput,
+  configureMuse,
+  discoverMuseModels,
+  museModels,
+} from "./MuseAcpSupport.ts";
+import type * as Acp from "@agentclientprotocol/sdk";
 
 describe("Muse ACP configuration", () => {
+  it("discovers each model's own effort choices and preserves Muse default metadata", async () => {
+    let current = "contributor";
+    const runtime = {
+      getConfigOptions: Effect.sync((): Acp.SessionConfigOption[] => [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: current,
+          options: [
+            { value: "spark", name: "Spark" },
+            { value: "contributor", name: "Contributor" },
+          ],
+        },
+        {
+          id: "reasoning_effort",
+          name: "Reasoning",
+          type: "select",
+          currentValue: "default",
+          options: [
+            { value: "default", name: "Muse default" },
+            current === "spark" ? { value: "max", name: "Max" } : { value: "low", name: "Low" },
+          ],
+        },
+      ]),
+      setModel: (model: string) =>
+        Effect.sync(() => {
+          current = model;
+        }),
+    };
+    const models = await Effect.runPromise(discoverMuseModels(runtime));
+    expect(
+      models.map((model) => [
+        model.slug,
+        model.supportedReasoningEfforts?.map((effort) => effort.value),
+      ]),
+    ).toEqual([
+      ["default", ["default", "low"]],
+      ["spark", ["default", "max"]],
+      ["contributor", ["default", "low"]],
+    ]);
+  });
   it("applies effort on every turn and restores default after Plan", async () => {
     const calls: string[] = [];
     const runtime = {

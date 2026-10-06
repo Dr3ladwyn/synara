@@ -44,7 +44,7 @@ import {
   resolveProviderSessionInstanceId,
 } from "../Services/ProviderAdapter.ts";
 import { type AcpSessionRuntimeShape } from "../acp/AcpSessionRuntime.ts";
-import { makeMuseRuntime, configureMuse, museModels } from "../acp/MuseAcpSupport.ts";
+import { makeMuseRuntime, configureMuse, discoverMuseModels } from "../acp/MuseAcpSupport.ts";
 import {
   mapAcpToAdapterError,
   resolveAcpPermissionPolicy,
@@ -634,7 +634,7 @@ export const makeMuseAdapter = Effect.gen(function* () {
       });
       yield* runtime.start();
       return {
-        models: museModels(yield* runtime.getConfigOptions),
+        models: yield* discoverMuseModels(runtime),
         source: "muse.acp",
         cached: false,
       };

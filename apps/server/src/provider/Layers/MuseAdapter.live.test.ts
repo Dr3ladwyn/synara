@@ -53,6 +53,8 @@ it.skipIf(process.env.SYNARA_LIVE_MUSE !== "1")(
           };
           const models = yield* adapter.listModels!({ provider: "muse", binaryPath, cwd });
           expect(models.models.some((model) => model.slug.startsWith("muse-"))).toBe(true);
+          const spark = models.models.find((model) => model.slug === "muse-spark-1.3");
+          expect(spark?.supportedReasoningEfforts?.map((effort) => effort.value)).toContain("max");
           const session = yield* adapter.startSession(input);
           expect(museResumeId(session.resumeCursor)).toBeTruthy();
           yield* adapter.sendTurn({
