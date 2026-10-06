@@ -50,7 +50,13 @@ session start; no tokens or login files are parsed to guess an authenticated sta
 The first version does not advertise native steering, native rollback, plugin
 discovery, session import, or subscription usage reporting.
 
-Verified on Windows with Muse Code 1.4.3 and muse-acp 0.10.0. To repeat the live
+Windows compatibility: stock muse-acp 0.10.0 strips the verbatim `\\?\` prefix
+from canonical MSP `workspaceRoots`. With Muse Code 1.4.3 this can reject the
+first turn after resume. A bridge build that preserves the canonical prefix
+is required; changing the Synara project path does not fix the bridge's serialization.
+The resume-and-send test below passes with that bridge correction.
+
+To repeat the live
 adapter check, set `SYNARA_LIVE_MUSE=1` (optionally `MUSE_ACP_TEST_BINARY` to the
 bridge executable) and run from the repository root:
 
@@ -58,9 +64,9 @@ bridge executable) and run from the repository root:
 bun run --cwd apps/server test src/provider/Layers/MuseAdapter.live.test.ts
 ```
 
-This opt-in test sends a short model prompt in a temporary workspace, then
-interrupts a second prompt. It checks model discovery, streamed output,
-session shutdown, native resume, and cancellation.
+This opt-in test sends two short model prompts across a restart in a temporary
+workspace, then interrupts a third prompt. It checks model discovery, streamed output,
+session shutdown, a completed reply after native resume, and cancellation.
 
 ## What Synara manages
 

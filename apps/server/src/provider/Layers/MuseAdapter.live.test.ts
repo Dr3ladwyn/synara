@@ -57,13 +57,23 @@ it.skipIf(process.env.SYNARA_LIVE_MUSE !== "1")(
           expect(spark?.supportedReasoningEfforts?.map((effort) => effort.value)).toContain("max");
           const session = yield* adapter.startSession(input);
           expect(museResumeId(session.resumeCursor)).toBeTruthy();
-          yield* adapter.sendTurn({
+          const firstTurn = yield* adapter.sendTurn({
             threadId,
             input: "Reply exactly MUSE_READY. Do not use tools or modify any files.",
           });
           const terminal = yield* Deferred.await(done).pipe(Effect.timeout(90_000));
           expect(terminal.type === "turn.completed" && terminal.payload.state).toBe("completed");
-          expect(JSON.stringify(received)).toContain("MUSE_READY");
+          expect(
+            received
+              .flatMap((event) =>
+                event.type === "content.delta" &&
+                event.turnId === firstTurn.turnId &&
+                event.payload.streamKind === "assistant_text"
+                  ? [event.payload.delta]
+                  : [],
+              )
+              .join(""),
+          ).toContain("MUSE_READY");
           yield* adapter.stopSession(threadId);
           expect(yield* adapter.hasSession(threadId)).toBe(false);
           const resumed = yield* adapter.startSession({
@@ -71,6 +81,33 @@ it.skipIf(process.env.SYNARA_LIVE_MUSE !== "1")(
             resumeCursor: session.resumeCursor,
           });
           expect(resumed.resumeCursor).toEqual(session.resumeCursor);
+          const resumedTurn = yield* adapter.sendTurn({
+            threadId,
+            input: "Reply exactly MUSE_RESUMED. Do not use tools.",
+          });
+          const resumedEvent = yield* Effect.gen(function* () {
+            while (true) {
+              const event = received.find(
+                (event) => event.type === "turn.completed" && event.turnId === resumedTurn.turnId,
+              );
+              if (event) return event;
+              yield* Effect.sleep(100);
+            }
+          }).pipe(Effect.timeout(90_000));
+          expect(resumedEvent.type === "turn.completed" && resumedEvent.payload.state).toBe(
+            "completed",
+          );
+          expect(
+            received
+              .flatMap((event) =>
+                event.type === "content.delta" &&
+                event.turnId === resumedTurn.turnId &&
+                event.payload.streamKind === "assistant_text"
+                  ? [event.payload.delta]
+                  : [],
+              )
+              .join(""),
+          ).toContain("MUSE_RESUMED");
           const cancelled = yield* adapter.sendTurn({
             threadId,
             input: "Explain recursion in detail. Do not use tools.",
