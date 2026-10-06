@@ -192,6 +192,12 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     setPreference: (enabled) => ipcRenderer.invoke(IPC.customTitleBarSetPreference, enabled),
     relaunch: () => ipcRenderer.invoke(IPC.customTitleBarRelaunch),
   },
+  keepAwake: {
+    getState: () => ipcRenderer.invoke(IPC.keepAwake.getState),
+    setEnabled: (enabled) => ipcRenderer.invoke(IPC.keepAwake.setEnabled, enabled),
+    setRemoteAccessAllowed: (allowed) =>
+      ipcRenderer.invoke(IPC.keepAwake.setRemoteAccessAllowed, allowed),
+  },
   computerPreview: {
     onFrame: (listener) => {
       const wrappedListener = (_event: Electron.IpcRendererEvent, payload: unknown) => {

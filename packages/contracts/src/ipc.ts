@@ -810,6 +810,17 @@ export interface DesktopCustomTitleBarState {
   restartRequired: boolean;
 }
 
+/**
+ * "Keep this computer awake" for remote access. `enabled` is the persisted
+ * preference; `active` says whether the sleep blocker is held right now, which
+ * also needs remote access allowed and (where the OS reports it) AC power.
+ */
+export interface DesktopKeepAwakeState {
+  enabled: boolean;
+  active: boolean;
+  onBattery: boolean;
+}
+
 export const DesktopAppIcon = Schema.Literals(["default", "icon", "dark", "beta"]);
 export type DesktopAppIcon = typeof DesktopAppIcon.Type;
 
@@ -1027,6 +1038,16 @@ export interface DesktopBridge {
     getState: () => Promise<DesktopCustomTitleBarState>;
     setPreference: (enabled: boolean) => Promise<DesktopCustomTitleBarState>;
     relaunch: () => Promise<void>;
+  };
+  /**
+   * Keep the computer awake while remote access is allowed and it runs on AC
+   * power. The renderer reports the owner's "Allow connections" switch; the
+   * main process persists both and owns the sleep blocker.
+   */
+  keepAwake?: {
+    getState: () => Promise<DesktopKeepAwakeState>;
+    setEnabled: (enabled: boolean) => Promise<DesktopKeepAwakeState>;
+    setRemoteAccessAllowed: (allowed: boolean) => Promise<DesktopKeepAwakeState>;
   };
   /**
    * Live desktop frames from the native computer frame tap, desktop app only.

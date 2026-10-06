@@ -41,6 +41,7 @@ import {
   nativeTheme,
   protocol,
   powerMonitor,
+  powerSaveBlocker,
   screen,
   safeStorage,
   session,
@@ -320,6 +321,12 @@ import {
   writeAgentCursorPreference,
 } from "./agentCursorPreference";
 import {
+  createKeepAwakeController,
+  type KeepAwakeController,
+  readKeepAwakePreference,
+  writeKeepAwakePreference,
+} from "./keepAwake";
+import {
   readDesktopWindowState,
   resolveVisibleWindowBounds,
   writeDesktopWindowState,
@@ -412,6 +419,7 @@ const DESKTOP_CUSTOM_TITLE_BAR_PATH = Path.join(STATE_DIR, "desktop-custom-title
 // Written by the renderer-mirrored agent cursor colors; read at each driver
 // session open so a persisted custom cursor survives app restarts.
 const AGENT_CURSOR_PREFERENCE_PATH = Path.join(STATE_DIR, "agent-cursor-colors.json");
+const KEEP_AWAKE_PREFERENCE_PATH = Path.join(STATE_DIR, "keep-awake.json");
 const DESKTOP_SCHEME = desktopIdentity.scheme;
 const ROOT_DIR = Path.resolve(__dirname, "../../..");
 const APP_DISPLAY_NAME = desktopIdentity.displayName;
@@ -5325,6 +5333,23 @@ function registerIpcHandlers(): void {
     return getDesktopCustomTitleBarState();
   });
 
+  ipcMain.removeHandler(IPC.keepAwake.getState);
+  ipcMain.handle(IPC.keepAwake.getState, async () => getKeepAwakeController().getState());
+
+  ipcMain.removeHandler(IPC.keepAwake.setEnabled);
+  ipcMain.handle(IPC.keepAwake.setEnabled, async (_event, rawEnabled: unknown) =>
+    typeof rawEnabled === "boolean"
+      ? getKeepAwakeController().setEnabled(rawEnabled)
+      : getKeepAwakeController().getState(),
+  );
+
+  ipcMain.removeHandler(IPC.keepAwake.setRemoteAccessAllowed);
+  ipcMain.handle(IPC.keepAwake.setRemoteAccessAllowed, async (_event, rawAllowed: unknown) =>
+    typeof rawAllowed === "boolean"
+      ? getKeepAwakeController().setRemoteAccessAllowed(rawAllowed)
+      : getKeepAwakeController().getState(),
+  );
+
   ipcMain.removeHandler(IPC.customTitleBarRelaunch);
   ipcMain.handle(IPC.customTitleBarRelaunch, async () => {
     app.relaunch();
@@ -5651,6 +5676,20 @@ function getTitleBarOptions(): BrowserWindowConstructorOptions {
   });
   customTitleBarActive = "frame" in frameOptions && frameOptions.frame === false;
   return frameOptions;
+}
+
+let keepAwakeController: KeepAwakeController | undefined;
+
+/** Created on first use after `app` is ready, which `powerMonitor` requires. */
+function getKeepAwakeController(): KeepAwakeController {
+  keepAwakeController ??= createKeepAwakeController({
+    monitor: powerMonitor,
+    blocker: powerSaveBlocker,
+    load: () => readKeepAwakePreference(KEEP_AWAKE_PREFERENCE_PATH),
+    save: (preference) => writeKeepAwakePreference(KEEP_AWAKE_PREFERENCE_PATH, preference),
+    onError: (error) => safeConsoleError("[desktop] keep-awake preference write failed", error),
+  });
+  return keepAwakeController;
 }
 
 function getDesktopCustomTitleBarState() {
@@ -6145,6 +6184,12 @@ async function bootstrap(): Promise<void> {
   }
 
   registerIpcHandlers();
+  // Apply the saved keep-awake preference at launch, before any window reports.
+  getKeepAwakeController();
+  app.once("will-quit", () => {
+    keepAwakeController?.dispose();
+    keepAwakeController = undefined;
+  });
   const disposeRemoteResources = registerRemoteResourceBroker({
     trustedRenderer: () =>
       mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null,

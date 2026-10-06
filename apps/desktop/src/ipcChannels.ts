@@ -27,6 +27,11 @@ export const DESKTOP_IPC_CHANNELS = {
   customTitleBarGetState: "desktop:custom-title-bar-get-state",
   customTitleBarSetPreference: "desktop:custom-title-bar-set-preference",
   customTitleBarRelaunch: "desktop:custom-title-bar-relaunch",
+  keepAwake: {
+    getState: "desktop:keep-awake-get-state",
+    setEnabled: "desktop:keep-awake-set-enabled",
+    setRemoteAccessAllowed: "desktop:keep-awake-set-remote-access-allowed",
+  },
   menuAction: "desktop:menu-action",
   setMenuShortcuts: "desktop:set-menu-shortcuts",
   quitConfirmationRequest: "desktop:quit-confirmation-request",
