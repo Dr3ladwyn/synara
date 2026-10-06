@@ -41,6 +41,7 @@ import {
   checkCursorProviderStatus,
   checkDevinProviderStatus,
   checkGrokProviderStatus,
+  checkMuseProviderStatus,
   checkOpenCodeProviderStatus,
   checkPiProviderStatus,
   makeCheckClaudeProviderStatus,
@@ -213,6 +214,7 @@ const allProvidersDisabledSettings = {
     devin: { enabled: false },
     antigravity: { enabled: false },
     grok: { enabled: false },
+    muse: { enabled: false },
     droid: { enabled: false },
     opencode: { enabled: false },
     pi: { enabled: false },
@@ -229,12 +231,38 @@ const allProvidersDisabledServerSettings = {
     devin: { ...DEFAULT_SERVER_SETTINGS.providers.devin, enabled: false },
     antigravity: { ...DEFAULT_SERVER_SETTINGS.providers.antigravity, enabled: false },
     grok: { ...DEFAULT_SERVER_SETTINGS.providers.grok, enabled: false },
+    muse: { ...DEFAULT_SERVER_SETTINGS.providers.muse, enabled: false },
     droid: { ...DEFAULT_SERVER_SETTINGS.providers.droid, enabled: false },
     opencode: { ...DEFAULT_SERVER_SETTINGS.providers.opencode, enabled: false },
     pi: { ...DEFAULT_SERVER_SETTINGS.providers.pi, enabled: false },
     omp: { ...DEFAULT_SERVER_SETTINGS.providers.omp, enabled: false },
   },
 } satisfies typeof DEFAULT_SERVER_SETTINGS;
+
+describe("Muse health", () => {
+  it.effect("reports bridge installation without guessing login status", () =>
+    Effect.gen(function* () {
+      const status = yield* checkMuseProviderStatus("/test/muse-acp.exe");
+      assert.strictEqual(status.available, true);
+      assert.strictEqual(status.version, "0.10.0");
+      assert.strictEqual(status.authStatus, "unknown");
+    }).pipe(
+      Effect.provide(
+        mockSpawnerLayer((args) => {
+          assert.deepEqual(args, ["--version"]);
+          return { stdout: "muse-acp 0.10.0", stderr: "", code: 0 };
+        }),
+      ),
+    ),
+  );
+  it.effect("reports a missing bridge as unavailable", () =>
+    Effect.gen(function* () {
+      const status = yield* checkMuseProviderStatus("/test/muse-acp.exe");
+      assert.strictEqual(status.available, false);
+      assert.strictEqual(status.status, "error");
+    }).pipe(Effect.provide(failingSpawnerLayer("spawn muse-acp ENOENT"))),
+  );
+});
 
 describe("provider health probe concurrency", () => {
   it.effect("bounds concurrent probes while preserving every result", () =>
@@ -733,7 +761,8 @@ it.layer(NodeServices.layer)("ProviderHealth", (it) => {
       );
       const codex = statuses.find((status) => status.provider === "codex");
 
-      assert.strictEqual(statuses.length, 10);
+      assert.strictEqual(statuses.length, 11);
+      assert.strictEqual(statuses.find((status) => status.provider === "muse")?.available, false);
       assert.strictEqual(codex?.available, false);
       assert.strictEqual(codex?.message, "Provider is disabled in Synara settings.");
     });

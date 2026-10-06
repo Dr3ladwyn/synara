@@ -403,6 +403,7 @@ export function PluginLibrary(props?: {
   const ompCapabilitiesQuery = useQuery(providerComposerCapabilitiesQueryOptions("omp"));
 
   const providerCapabilities: Record<ProviderKind, ProviderCapabilities> = {
+    muse: { plugins: false, skills: false },
     codex: {
       plugins: supportsPluginDiscovery(codexCapabilitiesQuery.data),
       skills: supportsSkillDiscovery(codexCapabilitiesQuery.data),

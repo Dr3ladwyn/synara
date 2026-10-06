@@ -222,6 +222,7 @@ export function getDefaultNativeFontSmoothing(platform = globalThis.navigator?.p
 }
 
 type CustomModelSettingsKey =
+  | "customMuseModels"
   | "customCodexModels"
   | "customClaudeModels"
   | "customCursorModels"
@@ -243,6 +244,7 @@ export type ProviderCustomModelConfig = {
 };
 
 const BUILT_IN_MODEL_SLUGS_BY_PROVIDER: Record<ProviderKind, ReadonlySet<string>> = {
+  muse: new Set(getModelOptions("muse").map((option) => option.slug)),
   codex: new Set(getModelOptions("codex").map((option) => option.slug)),
   claudeAgent: new Set(getModelOptions("claudeAgent").map((option) => option.slug)),
   cursor: new Set(getModelOptions("cursor").map((option) => option.slug)),
@@ -269,6 +271,7 @@ const withDefaults =
     );
 
 const PersistedProviderKind = Schema.Literals([
+  "muse",
   "codex",
   "claudeAgent",
   "cursor",
@@ -362,6 +365,7 @@ export const AppSettingsSchema = Schema.Struct({
   // Deprecated Gemini keys remain decodable until normalization rewrites local storage.
   geminiBinaryPath: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(4096))),
   grokBinaryPath: Schema.String.check(Schema.isMaxLength(4096)).pipe(withDefaults(() => "")),
+  museBinaryPath: Schema.String.check(Schema.isMaxLength(4096)).pipe(withDefaults(() => "")),
   droidBinaryPath: Schema.String.check(Schema.isMaxLength(4096)).pipe(withDefaults(() => "")),
   openCodeBinaryPath: Schema.String.check(Schema.isMaxLength(4096)).pipe(withDefaults(() => "")),
   piBinaryPath: Schema.String.check(Schema.isMaxLength(4096)).pipe(withDefaults(() => "")),
@@ -542,6 +546,7 @@ export const AppSettingsSchema = Schema.Struct({
   customAntigravityModels: Schema.Array(Schema.String).pipe(withDefaults(() => [])),
   customGeminiModels: Schema.optionalKey(Schema.Array(Schema.String)),
   customGrokModels: Schema.Array(Schema.String).pipe(withDefaults(() => [])),
+  customMuseModels: Schema.Array(Schema.String).pipe(withDefaults(() => [])),
   customDroidModels: Schema.Array(Schema.String).pipe(withDefaults(() => [])),
   customOpenCodeModels: Schema.Array(Schema.String).pipe(withDefaults(() => [])),
   customPiModels: Schema.Array(Schema.String).pipe(withDefaults(() => [])),
@@ -616,6 +621,15 @@ const DEFAULT_APP_SETTINGS = AppSettingsSchema.makeUnsafe({});
 let serverSettingsMigrationInFlight = false;
 
 const PROVIDER_CUSTOM_MODEL_CONFIG: Record<ProviderKind, ProviderCustomModelConfig> = {
+  muse: {
+    provider: "muse",
+    settingsKey: "customMuseModels",
+    defaultSettingsKey: "customMuseModels",
+    title: "Muse Code",
+    description: "Additional Muse model IDs. Available models are discovered from Muse Code.",
+    placeholder: "Muse model ID",
+    example: "muse-spark-1.3",
+  },
   codex: {
     provider: "codex",
     settingsKey: "customCodexModels",
@@ -926,6 +940,7 @@ export interface UnsupportedProviderInstanceOption {
 }
 
 const PROVIDER_INSTANCE_PROVIDER_ORDER = [
+  "muse",
   "codex",
   "claudeAgent",
   "cursor",
@@ -944,6 +959,8 @@ function providerInstanceIdForCodexAccount(accountId: string): ProviderInstanceI
 
 function defaultProviderInstanceLabel(provider: ProviderKind): string {
   switch (provider) {
+    case "muse":
+      return "Muse Code";
     case "claudeAgent":
       return "Claude";
     case "opencode":
@@ -1435,6 +1452,7 @@ function normalizeAppSettings(settings: AppSettings): AppSettings {
       settings.antigravityBinaryPath || legacyGeminiBinaryPath,
     ),
     grokBinaryPath: normalizeProviderBinaryPathOverride("grok", settings.grokBinaryPath),
+    museBinaryPath: normalizeProviderBinaryPathOverride("muse", settings.museBinaryPath),
     droidBinaryPath: normalizeProviderBinaryPathOverride("droid", settings.droidBinaryPath),
     openCodeBinaryPath: normalizeProviderBinaryPathOverride(
       "opencode",
@@ -1458,6 +1476,7 @@ function normalizeAppSettings(settings: AppSettings): AppSettings {
       "antigravity",
     ),
     customGrokModels: normalizeCustomModelSlugs(settings.customGrokModels, "grok"),
+    customMuseModels: normalizeCustomModelSlugs(settings.customMuseModels, "muse"),
     customDroidModels: normalizeCustomModelSlugs(settings.customDroidModels, "droid"),
     customOpenCodeModels: normalizeCustomModelSlugs(settings.customOpenCodeModels, "opencode"),
     customPiModels: normalizeCustomModelSlugs(settings.customPiModels, "pi"),
@@ -1519,6 +1538,7 @@ function serverSettingsToAppSettings(settings: ServerSettingsView): Partial<AppS
     enableProviderUpdateChecks: settings.enableProviderUpdateChecks,
     antigravityBinaryPath: settings.providers.antigravity.binaryPath,
     grokBinaryPath: settings.providers.grok.binaryPath,
+    museBinaryPath: settings.providers.muse.binaryPath,
     droidBinaryPath: settings.providers.droid.binaryPath,
     openCodeBinaryPath: settings.providers.opencode.binaryPath,
     openCodeExperimentalWebSockets: settings.providers.opencode.experimentalWebSockets,
@@ -1534,6 +1554,7 @@ function serverSettingsToAppSettings(settings: ServerSettingsView): Partial<AppS
     customDevinModels: settings.providers.devin.customModels,
     customAntigravityModels: settings.providers.antigravity.customModels,
     customGrokModels: settings.providers.grok.customModels,
+    customMuseModels: settings.providers.muse.customModels,
     customDroidModels: settings.providers.droid.customModels,
     customOpenCodeModels: settings.providers.opencode.customModels,
     customPiModels: settings.providers.pi.customModels,
@@ -1572,6 +1593,7 @@ function touchesProviderDiscoverySettings(patch: Partial<AppSettings>): boolean 
     hasOwn(patch, "codexAccounts") ||
     hasOwn(patch, "selectedCodexAccountId") ||
     hasOwn(patch, "devinBinaryPath") ||
+    hasOwn(patch, "museBinaryPath") ||
     hasOwn(patch, "providerInstances") ||
     hasOwn(patch, "claudeHomePath") ||
     hasOwn(patch, "openCodeBinaryPath") ||
@@ -1764,6 +1786,12 @@ export function appSettingsPatchToServerSettingsPatch(
         : {}),
     };
   }
+  if (hasOwn(patch, "museBinaryPath") || hasOwn(patch, "customMuseModels")) {
+    providers.muse = {
+      ...(hasOwn(patch, "museBinaryPath") ? { binaryPath: patch.museBinaryPath ?? "" } : {}),
+      ...(hasOwn(patch, "customMuseModels") ? { customModels: patch.customMuseModels ?? [] } : {}),
+    };
+  }
   if (hasOwn(patch, "grokBinaryPath") || hasOwn(patch, "customGrokModels")) {
     providers.grok = {
       ...(hasOwn(patch, "grokBinaryPath") ? { binaryPath: patch.grokBinaryPath ?? "" } : {}),
@@ -1878,6 +1906,7 @@ export function buildInitialServerSettingsMigrationPatch(
     "devinBinaryPath",
     "antigravityBinaryPath",
     "grokBinaryPath",
+    "museBinaryPath",
     "droidBinaryPath",
     "openCodeBinaryPath",
     "openCodeExperimentalWebSockets",
@@ -1912,6 +1941,7 @@ export function buildInitialServerSettingsMigrationPatch(
     "customDevinModels",
     "customAntigravityModels",
     "customGrokModels",
+    "customMuseModels",
     "customDroidModels",
     "customOpenCodeModels",
     "customPiModels",
@@ -2071,6 +2101,7 @@ export function getCustomModelsByProvider(
     devin: getCustomModelsForProvider(settings, "devin"),
     antigravity: getCustomModelsForProvider(settings, "antigravity"),
     grok: getCustomModelsForProvider(settings, "grok"),
+    muse: getCustomModelsForProvider(settings, "muse"),
     droid: getCustomModelsForProvider(settings, "droid"),
     opencode: getCustomModelsForProvider(settings, "opencode"),
     pi: getCustomModelsForProvider(settings, "pi"),
@@ -2235,6 +2266,8 @@ function buildProviderStartOptionsFromInstanceConfig(
       return typeof binaryPath === "string" ? { antigravity: { binaryPath } } : undefined;
     case "grok":
       return typeof binaryPath === "string" ? { grok: { binaryPath } } : undefined;
+    case "muse":
+      return typeof binaryPath === "string" ? { muse: { binaryPath } } : undefined;
     case "droid":
       return typeof binaryPath === "string" ? { droid: { binaryPath } } : undefined;
     case "opencode": {
@@ -2297,6 +2330,7 @@ function mergeProviderStartOptionsForApp(
       ? { antigravity: { ...base.antigravity, ...overlay.antigravity } }
       : {}),
     ...(base.grok || overlay.grok ? { grok: { ...base.grok, ...overlay.grok } } : {}),
+    ...(base.muse || overlay.muse ? { muse: { ...base.muse, ...overlay.muse } } : {}),
     ...(base.droid || overlay.droid ? { droid: { ...base.droid, ...overlay.droid } } : {}),
     ...(base.opencode || overlay.opencode
       ? { opencode: { ...base.opencode, ...overlay.opencode } }
@@ -2337,7 +2371,7 @@ export function getProviderStartOptions(
     | "ompAgentDir"
     | "ompBinaryPath"
   > &
-    Partial<Pick<AppSettings, "claudeHomePath" | "providerInstances">>,
+    Partial<Pick<AppSettings, "claudeHomePath" | "providerInstances" | "museBinaryPath">>,
   instanceId?: ProviderInstanceId | null | undefined,
 ): ProviderStartOptions | undefined {
   const claudeBinaryPath = normalizeProviderBinaryPathOverride(
@@ -2351,6 +2385,7 @@ export function getProviderStartOptions(
     settings.antigravityBinaryPath,
   );
   const grokBinaryPath = normalizeProviderBinaryPathOverride("grok", settings.grokBinaryPath);
+  const museBinaryPath = normalizeProviderBinaryPathOverride("muse", settings.museBinaryPath ?? "");
   const droidBinaryPath = normalizeProviderBinaryPathOverride("droid", settings.droidBinaryPath);
   const openCodeBinaryPath = normalizeProviderBinaryPathOverride(
     "opencode",
@@ -2363,6 +2398,7 @@ export function getProviderStartOptions(
     openCodeBinaryPath || settings.openCodeExperimentalWebSockets || settings.openCodeServerUrl,
   );
   const providerOptions: ProviderStartOptions = {
+    ...(museBinaryPath ? { muse: { binaryPath: museBinaryPath } } : {}),
     ...(codexLaunch.binaryPath ||
     codexLaunch.homePath ||
     codexLaunch.shadowHomePath ||
@@ -2509,6 +2545,9 @@ export function mergeProviderStartOptions(
     ...(base.grok !== undefined || overlay.grok !== undefined
       ? { grok: { ...base.grok, ...overlay.grok } }
       : {}),
+    ...(base.muse !== undefined || overlay.muse !== undefined
+      ? { muse: { ...base.muse, ...overlay.muse } }
+      : {}),
     ...(base.droid !== undefined || overlay.droid !== undefined
       ? { droid: { ...base.droid, ...overlay.droid } }
       : {}),
@@ -2562,7 +2601,8 @@ export function getCustomBinaryPathForProvider(
     | "openCodeBinaryPath"
     | "piBinaryPath"
     | "ompBinaryPath"
-  >,
+  > &
+    Partial<Pick<AppSettings, "museBinaryPath">>,
   provider: ProviderKind,
 ): string {
   switch (provider) {
@@ -2578,6 +2618,8 @@ export function getCustomBinaryPathForProvider(
       return normalizeProviderBinaryPathOverride(provider, settings.antigravityBinaryPath);
     case "grok":
       return normalizeProviderBinaryPathOverride(provider, settings.grokBinaryPath);
+    case "muse":
+      return normalizeProviderBinaryPathOverride(provider, settings.museBinaryPath ?? "");
     case "droid":
       return normalizeProviderBinaryPathOverride(provider, settings.droidBinaryPath);
     case "opencode":

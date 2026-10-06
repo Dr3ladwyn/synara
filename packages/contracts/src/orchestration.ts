@@ -15,6 +15,7 @@ import {
   DevinModelOptions,
   DroidModelOptions,
   GrokModelOptions,
+  MuseModelOptions,
   OpenCodeModelOptions,
   OmpModelOptions,
   PiModelOptions,
@@ -74,6 +75,7 @@ export const ORCHESTRATION_WS_CHANNELS = {
 } as const;
 
 export const ProviderKind = Schema.Literals([
+  "muse",
   "codex",
   "claudeAgent",
   "cursor",
@@ -138,6 +140,7 @@ function inferProviderFromInstanceId(instanceId: string): ProviderKind | undefin
   }
 
   const lowerInstanceId = instanceId.toLowerCase();
+  if (lowerInstanceId.startsWith("muse")) return "muse";
   if (lowerInstanceId.startsWith("claude")) {
     return "claudeAgent";
   }
@@ -176,6 +179,7 @@ function inferProviderFromInstanceId(instanceId: string): ProviderKind | undefin
 
 function inferProviderFromModel(model: string): ProviderKind {
   const lowerModel = model.toLowerCase();
+  if (lowerModel.startsWith("muse-")) return "muse";
   if (
     lowerModel.includes("claude") ||
     lowerModel.includes("sonnet") ||
@@ -318,7 +322,16 @@ export const DevinModelSelection = Schema.Struct({
 });
 export type DevinModelSelection = typeof DevinModelSelection.Type;
 
+export const MuseModelSelection = Schema.Struct({
+  provider: Schema.Literal("muse"),
+  instanceId: ProviderInstanceIdForDriver("muse"),
+  model: TrimmedNonEmptyString,
+  options: Schema.optional(MuseModelOptions),
+});
+export type MuseModelSelection = typeof MuseModelSelection.Type;
+
 const ModelSelectionByProvider = Schema.Union([
+  MuseModelSelection,
   CodexModelSelection,
   ClaudeModelSelection,
   CursorModelSelection,
@@ -448,6 +461,12 @@ export const DevinProviderStartOptions = Schema.Struct({
 });
 
 export const ProviderStartOptions = Schema.Struct({
+  muse: Schema.optional(
+    Schema.Struct({
+      binaryPath: Schema.optional(TrimmedNonEmptyString),
+      environment: Schema.optional(ProcessEnvRecord),
+    }),
+  ),
   codex: Schema.optional(CodexProviderStartOptions),
   claudeAgent: Schema.optional(ClaudeProviderStartOptions),
   cursor: Schema.optional(CursorProviderStartOptions),

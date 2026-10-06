@@ -83,6 +83,7 @@ function serverSettings(overrides: Partial<ServerSettings["providers"]> = {}): S
       devin: { ...provider, binaryPath: "devin" },
       antigravity: { ...provider, binaryPath: "agy" },
       grok: { ...provider, binaryPath: "grok" },
+      muse: { ...provider, binaryPath: "muse-acp" },
       droid: { ...provider, binaryPath: "droid" },
       opencode: {
         ...provider,
