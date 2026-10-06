@@ -4,6 +4,8 @@ import { join } from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ThreadId, type ProviderRuntimeEvent } from "@synara/contracts";
 import { Deferred, Effect, Layer, Stream } from "effect";
+import { ChildProcessSpawner } from "effect/unstable/process";
+import { configureMuse, makeMuseRuntime } from "../acp/MuseAcpSupport.ts";
 import { expect, it } from "vitest";
 import { ServerConfig } from "../../config.ts";
 import { MuseAdapter } from "../Services/MuseAdapter.ts";
@@ -49,7 +51,11 @@ it.skipIf(process.env.SYNARA_LIVE_MUSE !== "1")(
             cwd,
             runtimeMode: "approval-required" as const,
             providerOptions: { muse: { binaryPath } },
-            modelSelection: { provider: "muse" as const, model: "default" },
+            modelSelection: {
+              provider: "muse" as const,
+              model: "muse-spark-1.3-contributor",
+              options: { reasoningEffort: "max" },
+            },
           };
           const models = yield* adapter.listModels!({ provider: "muse", binaryPath, cwd });
           expect(models.models.some((model) => model.slug.startsWith("muse-"))).toBe(true);
@@ -130,4 +136,52 @@ it.skipIf(process.env.SYNARA_LIVE_MUSE !== "1")(
     }
   },
   240_000,
+);
+
+it.skipIf(process.env.SYNARA_LIVE_MUSE !== "1")(
+  "round-trips every advertised Muse reasoning level without resetting to default",
+  async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "synara-muse-efforts-"));
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+          const runtime = yield* makeMuseRuntime({
+            cwd,
+            settings: { binaryPath: process.env.MUSE_ACP_TEST_BINARY ?? "muse-acp" },
+            childProcessSpawner,
+            clientInfo: { name: "Synara effort test", version: "1.0.0" },
+          });
+          yield* runtime.start();
+          const model = "muse-spark-1.3-contributor";
+          yield* runtime.setModel(model);
+          const effort = (yield* runtime.getConfigOptions).find(
+            (option) => option.id === "reasoning_effort",
+          );
+          if (effort?.type !== "select")
+            throw new Error("Muse did not advertise reasoning options");
+          const values = effort.options
+            .flatMap((entry) =>
+              "value" in entry ? [entry.value] : entry.options.map((choice) => choice.value),
+            )
+            .filter((value) => value !== "default");
+          expect(values).toEqual(
+            expect.arrayContaining(["minimal", "low", "medium", "high", "xhigh", "max"]),
+          );
+          for (const value of values) {
+            yield* configureMuse(runtime, model, { reasoningEffort: value }, false);
+            yield* configureMuse(runtime, model, undefined, false);
+            yield* configureMuse(runtime, model, { reasoningEffort: "default" }, false);
+            const selected = (yield* runtime.getConfigOptions).find(
+              (option) => option.id === "reasoning_effort",
+            );
+            expect(selected?.type === "select" && selected.currentValue).toBe(value);
+          }
+        }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+      );
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  },
+  180_000,
 );

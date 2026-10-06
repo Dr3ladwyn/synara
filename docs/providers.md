@@ -45,6 +45,11 @@ Synara, including in Full Access, so Synara's Plan and computer-consent checks
 still apply. Native sessions can be resumed; rollback uses Synara's
 restart-session capability rather than pretending to rewind Muse history.
 
+Reasoning choices are discovered per model. **Use session setting** leaves the
+current native effort unchanged, including after resume. Synara sends only an
+explicitly selected tier; MSP cannot clear an effort already stored in a session
+by setting it to `default`. Choose a concrete tier to change it.
+
 The setup badge verifies the bridge version only. Authentication is checked on
 session start; no tokens or login files are parsed to guess an authenticated state.
 The first version does not advertise native steering, native rollback, plugin
@@ -67,6 +72,8 @@ bun run --cwd apps/server test src/provider/Layers/MuseAdapter.live.test.ts
 This opt-in test sends two short model prompts across a restart in a temporary
 workspace, then interrupts a third prompt. It checks model discovery, streamed output,
 session shutdown, a completed reply after native resume, and cancellation.
+Another live check sets every advertised reasoning tier on the contributor model
+and verifies that an omitted effort or `default` preserves each selected tier.
 
 ## What Synara manages
 

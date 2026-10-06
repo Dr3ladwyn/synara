@@ -87,7 +87,7 @@ export function museModels(
       ? {
           supportedReasoningEfforts: choices(effort).map((choice) => ({
             value: choice.value,
-            label: choice.name,
+            label: choice.value === "default" ? "Use session setting" : choice.name,
           })),
           ...(effort.type === "select" ? { defaultReasoningEffort: effort.currentValue } : {}),
         }
@@ -137,7 +137,12 @@ export function configureMuse(
 ) {
   return Effect.gen(function* () {
     if (model && model !== "default") yield* runtime.setModel(model);
-    yield* runtime.setConfigOption("reasoning_effort", options?.reasoningEffort ?? "default");
+    // MSP cannot clear a stored session effort. "default" is only a UI
+    // placeholder before an explicit tier is set, not a reset command.
+    const effort = options?.reasoningEffort?.trim();
+    if (effort && effort !== "default") {
+      yield* runtime.setConfigOption("reasoning_effort", effort);
+    }
     yield* runtime.setMode(plan ? "plan" : "default");
     yield* runtime.setConfigOption("approval_mode", "promptUnmatched");
     yield* runtime.setConfigOption("auto_review", "off");
