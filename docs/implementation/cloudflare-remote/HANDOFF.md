@@ -268,3 +268,22 @@ Non è stato identificato un blocco fondamentale assente nel percorso normale pa
 - [Piano originale](PLAN.md), [configurazione trial](READINESS.md), [operazioni](../../cloudflare-remote.md), [ADR 0016](../../adr/0016-managed-cloudflare-remote.md).
 
 Il checkpoint originale del 30 settembre era un recap con verifica del push. Per il merge successivo e lo stato corrente leggere l’aggiornamento del 1 ottobre in apertura.
+
+## Verifica operativa iPhone — 6 ottobre 2026
+
+La connessione Cloudflare deve funzionare anche su rete cellulare; la stessa LAN non è un requisito. Il controllo live ha trovato entrambi i tunnel del trial `down`, senza connector collegati, mentre l'API account rispondeva HTTP 200. Sul Mini girava soltanto l'istanza demo, senza configurazione account e senza cloudflared; la precedente home temporanea del Mini non era più presente. Le prove storiche non descrivono quindi lo stato dell'installazione attuale.
+
+L'iPhone conservava profili legacy LAN/Tailscale, non un abbinamento Cloudflare verificato per l'istanza demo. Le correzioni della UI offline non ripristinano quell'autorizzazione e non costituiscono una prova di accesso remoto.
+
+L'istanza demo è stata riavviata con API account e accesso remoto configurati, conservando la stessa home e una copia SQLite privata precedente al collegamento. Health locale HTTP 200 verificato. Il login Google integrato in Synara ha registrato l'istanza corrente e la creazione del codice di pairing ha inizializzato la sua identità TLS. Cloudflare segnala il nuovo tunnel `healthy`, con quattro connessioni; `/health` pubblico risponde HTTP 200 e `/api/v1/instance` pubblico HTTP 404, senza override DNS. Restano da completare il pairing della specifica chiave dell'iPhone e una lettura reale attraverso il tunnel. Non qualificare la connessione cellulare prima di questa prova e non conservare identità di una demo durevole in una home temporanea.
+
+Il percorso CLI `auth --device-code` restituisce una verification URI `/link`, ma il deployment attuale vi serve soltanto il messaggio generico dell'API, senza form di approvazione. Il codice scaduto non ha collegato alcun host; per questa ripresa è stato usato il login integrato, non una modifica manuale delle credenziali. Il flusso headless browser non è quindi qualificato su questo deployment.
+
+### October 6 — QR-first mobile pairing
+
+- Connections now renders an offline-generated QR alongside the short manual code. The `synara://connect` fragment contains version 1, the configured HTTPS account origin, invitation code, pinned root fingerprint, and expiry. It contains no account token. Expiry/cancel hides the QR; owner approval remains mandatory.
+- SynaraIOS accepts the remote invitation in its existing scanner, paste entry, and system-camera deep-link route. It retains the invitation through first sign-in, reuses an existing account session for that authority, selects a sole workspace automatically, and checks the returned computer fingerprint against the scanned one.
+- The signed-out desktop Connections panel now opens the existing account sign-in dialog. The mobile entry starts with Scan QR Code; manual server/code entry is secondary.
+- Verification: desktop formatting/lint/typecheck, four RemoteControls browser tests, and two UI typography tests pass. A desktop-generated invitation was parsed by the actual Swift parser; expired, duplicate-field, plaintext-authority, embedded-credential, and bad-fingerprint variants were rejected. Signed iPhone and simulator builds succeeded. Simulator deep-link delivery opened the new account screen with the invitation retained. Camera optics, physical-phone login, approval, and remote chat read/write are still unverified for this new flow.
+
+- The final signed build was installed on the USB iPhone without deleting its data. Apple Vision decoded the actual desktop-rendered QR, and its validated link was delivered to the iPhone with `devicectl --payload-url`; launch succeeded. This proves QR readability and OS delivery, not completed phone authentication or host approval.

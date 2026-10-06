@@ -8,6 +8,14 @@ const fixture = vi.hoisted(() => ({
   navigate: vi.fn(),
   approved: false,
   request: vi.fn(async (request: { operation: string }) => {
+    if (request.operation === "create-code")
+      return {
+        kind: "pairing-code",
+        code: "ABCD-2345",
+        inviteId: "qr-fixture",
+        rootFingerprint: "a".repeat(64),
+        expiresAt: new Date(Date.now() + 600000).toISOString(),
+      };
     if (request.operation === "device-info")
       return {
         kind: "device-info",
@@ -39,6 +47,11 @@ const fixture = vi.hoisted(() => ({
             },
           ],
     };
+  }),
+}));
+vi.mock("~/hooks/useAccount", () => ({
+  useAccount: () => ({
+    status: { state: "signed-in", accountAuthority: "https://account.example.test/api/v1" },
   }),
 }));
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
@@ -115,4 +128,17 @@ it("sends the exact displayed device fingerprint for owner approval", async () =
       deviceJkt: "Exact-requesting-device-fingerprint-123456789",
     }),
   );
+});
+
+it("shows a scannable remote invitation alongside the manual code and removes it on cancel", async () => {
+  await render(<RemotePairingPanel />);
+  await page.getByRole("button", { name: "Connect a device", exact: true }).click();
+  await expect.element(page.getByText("ABCD-2345", { exact: true })).toBeVisible();
+  await expect
+    .element(page.getByRole("img", { name: "Scan to connect to this computer" }))
+    .toBeInTheDocument();
+  await page.getByRole("button", { name: "Cancel code", exact: true }).click();
+  await expect
+    .element(page.getByRole("img", { name: "Scan to connect to this computer" }))
+    .not.toBeInTheDocument();
 });

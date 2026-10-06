@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
+import { useAccount } from "~/hooks/useAccount";
+import { remotePairingLink } from "~/lib/remotePairingLink";
 import type { RemoteAccessRequest, RemoteAccessResult } from "@synara/contracts";
 import { readHostsApi } from "~/lib/hosts/api";
 import { readExecutionContext } from "~/lib/hosts/executionContext";
@@ -26,6 +29,7 @@ export function RemotePairingPanel() {
 }
 
 function EnabledRemotePairingPanel() {
+  const account = useAccount();
   const inputId = useId();
   const confirmationId = useId();
   const [state, setState] = useState<HostState | null>(null);
@@ -128,24 +132,45 @@ function EnabledRemotePairingPanel() {
   const remaining = invitation
     ? Math.max(0, Math.ceil((Date.parse(invitation.expiresAt) - now) / 1_000))
     : 0;
+  const qrLink =
+    invitation && remaining > 0
+      ? remotePairingLink(
+          account.status?.state === "signed-in" ? account.status.accountAuthority : undefined,
+          invitation,
+        )
+      : null;
   return (
     <>
       <SettingsSection title="Connect a device to this computer">
         <SettingsListRow
-          title="Local approval required"
-          description="Sign in to the same Synara account on both computers. Create a code here, then approve the requesting device."
+          title="Connect your phone or another computer"
+          description="Scan with Synara on your phone, or enter the code on another computer. You approve each new device here."
           actions={
             <Button
               size="xs"
               disabled={busy}
               onClick={() => void perform({ operation: "create-code" })}
             >
-              Create pairing code
+              Connect a device
             </Button>
           }
         />
         {invitation ? (
           <div className="space-y-2 p-3">
+            {qrLink ? (
+              <>
+                <QRCodeSVG
+                  value={qrLink}
+                  size={224}
+                  marginSize={4}
+                  title="Scan to connect to this computer"
+                />
+                <p className="text-ui-sm text-muted-foreground">
+                  In Synara on your phone, open Connections and scan this QR code. Sign in once if
+                  needed. Works over Wi-Fi or mobile data while this computer is online.
+                </p>
+              </>
+            ) : null}
             <p className="text-ui-lg font-medium tracking-widest" aria-label="Pairing code">
               {remaining ? invitation.code : "Code expired"}
             </p>

@@ -16,6 +16,7 @@ import { Button } from "~/components/ui/button";
 import { Switch } from "~/components/ui/switch";
 import { toastManager } from "~/components/ui/toast";
 import { useAccount } from "~/hooks/useAccount";
+import { useAccountDialogStore } from "../account/accountDialogStore";
 import { useDevices, useHostConnections, useHosts, useHostSessions } from "~/hooks/useHosts";
 import { accountErrorMessage } from "~/lib/accountLogic";
 import {
@@ -59,6 +60,7 @@ function relativeTimeLabel(iso: string | null, now: number): string {
 
 export function ConnectionsSettingsPanel({ active }: { active: boolean }) {
   const account = useAccount();
+  const openSignIn = useAccountDialogStore((store) => store.openSignIn);
   const signedIn = account.me !== null;
   const capability = readExecutionContext()?.controller.capabilities;
   const enabled = active && signedIn && capability?.remoteConnections === true;
@@ -292,6 +294,9 @@ export function ConnectionsSettingsPanel({ active }: { active: boolean }) {
             <SettingsEmptyState layout="block">
               Sign in to see the machines on your account.
             </SettingsEmptyState>
+            <Button variant="outline" size="sm" onClick={openSignIn}>
+              Sign in
+            </Button>
           </div>
         </SettingsSection>
       </div>
