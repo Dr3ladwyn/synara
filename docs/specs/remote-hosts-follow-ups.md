@@ -68,8 +68,8 @@ These are implemented and unit-tested but have no path a user can reach:
    triggers surviving-device rotation, using CAS writes plus a durable journal
    so a partial upload or a process restart recovers safely; self-revocation is
    refused because a revoked device cannot be the surviving rotator.
-   **Presentation SHIPPED 2026-08-14.** A "Sync host secrets" section in the
-   Connections pane runs both halves of the flow; the pairing request travels
+   **Presentation SHIPPED 2026-08-14** (later withdrawn from the Connections
+   pane while host secrets sync stays disabled). A "Sync host secrets" section ran both halves of the flow; the pairing request travels
    as a versioned `synara-sync-v1:` base64url blob (device id + public JWK,
    no secret material) so the whole exchange is two copy/pastes and needs no
    route, dependency or extra RPC. The attempt cap is enforced in
@@ -87,11 +87,11 @@ These are implemented and unit-tested but have no path a user can reach:
      pairing on both sides and forces a fresh start, because the other cause
      of a mismatch is the MITM this code exists to catch. The final attempt's
      copy should name that risk rather than saying "incorrect code".
-   - **Lives as a "Sync host secrets" section in the Connections settings
+   - **Lived as a "Sync host secrets" section in the Connections settings
      pane**, alongside hosts, devices and active sessions. No new route.
 5. ~~**No host-side session UI.**~~ **DONE** — owner-only `hosts.listSessions`
-   and `hosts.endSession`, with an "Active sessions" section in the Connections
-   panel showing user, device, transport and start time, and a confirmed
+   and `hosts.endSession`, with an "Active sessions" section (Connections →
+   Advanced) showing user, device, transport and start time, and a confirmed
    disconnect through the registry's existing revocation path. This closes the
    third leg of ADR 0011's threat model: access is no longer invisible.
 

@@ -42,7 +42,7 @@ describe("the hosts settings pane", () => {
 
     expect(entries.length).toBeGreaterThan(0);
     expect(entries.map((entry) => entry.title)).toEqual(
-      expect.arrayContaining(["Hosts", "Devices", "Device code"]),
+      expect.arrayContaining(["Control this computer", "Control other devices", "SSH"]),
     );
   });
 

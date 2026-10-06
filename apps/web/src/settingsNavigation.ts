@@ -152,7 +152,8 @@ export const SETTINGS_NAV_ITEMS: readonly SettingsNavItem[] = [
     id: "connections",
     group: "integrations",
     label: "Connections",
-    description: "Machines you can reach from this account, and the devices signed in to it.",
+    description:
+      "Control this computer from your other devices, or control other computers from here.",
     icon: "globe",
     eyebrow: "Remote access",
   },
