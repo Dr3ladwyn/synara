@@ -242,6 +242,24 @@ const allProvidersDisabledServerSettings = {
 } satisfies typeof DEFAULT_SERVER_SETTINGS;
 
 describe("Muse health", () => {
+  it.effect("uses the selected Muse account environment for its bridge probe", () => {
+    const homeDir = mkdtempSync(join(OS.tmpdir(), "synara-muse-probe-"));
+    return checkMuseProviderStatus(
+      "/test/muse-acp",
+      { HOME: homeDir, META_API_KEY: "selected-muse-account" },
+      "muse_work",
+      { homeDir, isolationRootDir: homeDir },
+    ).pipe(
+      Effect.provide(
+        mockSpawnerLayer((_args, _command, env) => {
+          assertProviderInstanceEnv(env, "HOME", homeDir);
+          assertProviderInstanceEnv(env, "META_API_KEY", "selected-muse-account");
+          return { stdout: "muse-acp 0.10.0", stderr: "", code: 0 };
+        }),
+      ),
+      Effect.ensuring(Effect.sync(() => rmSync(homeDir, { recursive: true, force: true }))),
+    );
+  });
   it.effect("reports bridge installation without guessing login status", () =>
     Effect.gen(function* () {
       const status = yield* checkMuseProviderStatus("/test/muse-acp.exe");
@@ -1068,7 +1086,10 @@ it.layer(NodeServices.layer)("ProviderHealth", (it) => {
         const providerHealth = yield* ProviderHealth;
         const statuses = yield* providerHealth.refresh;
 
-        assert.strictEqual(statuses.length, 10);
+        assert.deepStrictEqual(
+          statuses.map((status) => status.provider).sort(),
+          Object.keys(allProvidersDisabledSettings.providers).sort(),
+        );
         for (const status of statuses) {
           assert.strictEqual(status.available, false);
           assert.strictEqual(status.message, "Provider is disabled in Synara settings.");

@@ -1682,7 +1682,7 @@ export const checkMuseProviderStatus = (
     const prepared = tryMakeProviderProbeEnv("muse", environment, instanceId, paths);
     if (!prepared.ok) return providerHomePreparationFailure("muse", base.checkedAt, prepared.cause);
     const probe = yield* probeProviderCliVersion(
-      runProviderCommand(binaryPath?.trim() || "muse-acp", ["--version"], prepared.env),
+      runProviderCommand(binaryPath?.trim() || "muse-acp", ["--version"], { env: prepared.env }),
       DEFAULT_TIMEOUT_MS,
     );
     if (probe.outcome !== "success")
