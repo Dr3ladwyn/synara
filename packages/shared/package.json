@@ -8,6 +8,10 @@
       "types": "./src/inboxDay.ts",
       "import": "./src/inboxDay.ts"
     },
+    "./diagnosticIssue": {
+      "types": "./src/diagnosticIssue.ts",
+      "import": "./src/diagnosticIssue.ts"
+    },
     "./betaFeatures": {
       "types": "./src/betaFeatures.ts",
       "import": "./src/betaFeatures.ts"

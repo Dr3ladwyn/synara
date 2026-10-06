@@ -798,7 +798,7 @@ describe("private saved recaps", () => {
     vi.mocked(isServerBetaFeatureEnabled).mockReturnValue(false);
     const session = sessionFor(makeBaseDir(), makeClient({}));
     const denied = {
-      message: "The Inbox is available in Synara Beta.",
+      message: "Saved Inbox history is available in Synara Beta.",
       code: "FEATURE_UNAVAILABLE",
     };
     expect(() =>

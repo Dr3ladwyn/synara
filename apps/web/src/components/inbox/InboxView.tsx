@@ -1,5 +1,5 @@
 // FILE: InboxView.tsx
-// Purpose: The Inbox page (Beta-only): a task column (what needs the user, what is running,
+// Purpose: The Inbox page (Stable and Beta): a task column (what needs the user, what is running,
 //          what finished, and today's to-dos) beside the day told as short written cards ("Your best model
 //          was ..."). Cards and groups exist only when the user's data does, and the grid
 //          closes the gaps they leave. Colors come from the theme.
@@ -22,7 +22,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 
 import { useAppSettings } from "~/appSettings";
-import { INBOX_ON } from "~/betaFeatures";
+import { ACCOUNT_INBOX_ON, INBOX_ON } from "~/betaFeatures";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { resolveProviderUsageSummary } from "~/hooks/useProviderUsageSummary";
@@ -808,7 +808,7 @@ export default function InboxView() {
                     {isRecapUnavailableError(recapQuery.error) ? (
                       <Tile className="p-5 @lg:px-7 @lg:py-6">
                         <span className="text-ui text-muted-foreground">
-                          The day recap needs a server running Synara Beta.
+                          The day recap needs a newer Synara server.
                         </span>
                       </Tile>
                     ) : (
@@ -831,10 +831,12 @@ export default function InboxView() {
                 )}
               </div>
             </div>
-            <InboxRecapHistory
-              recap={recapQuery.data}
-              renderRecap={(saved) => <SavedRecapDigest saved={saved} />}
-            />
+            {ACCOUNT_INBOX_ON ? (
+              <InboxRecapHistory
+                recap={recapQuery.data}
+                renderRecap={(saved) => <SavedRecapDigest saved={saved} />}
+              />
+            ) : null}
           </div>
         </TaskCardSurface>
       </div>

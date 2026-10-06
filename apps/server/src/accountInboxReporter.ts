@@ -5,7 +5,7 @@ import { Effect, Schema } from "effect";
 import type * as SqlClient from "effect/unstable/sql/SqlClient";
 import { SaveInboxRecapRequest } from "@synara/contracts";
 import { createAccountClient } from "@synara/shared/account";
-import { INBOX_BETA_FEATURE } from "@synara/shared/betaFeatures";
+import { ACCOUNT_INBOX_BETA_FEATURE } from "@synara/shared/betaFeatures";
 import { recapInputForRange, resolveInboxDay } from "@synara/shared/inboxDay";
 import { accountStateDirectory, readAccountCredentials, withFreshAccessToken } from "./accountAuth";
 import { writeFileStringAtomically } from "./atomicWrite";
@@ -30,7 +30,7 @@ export function createAccountInboxReporter(options: {
   let lastSnapshot: string | undefined;
 
   async function sync() {
-    if (stopped || !isServerBetaFeatureEnabled(INBOX_BETA_FEATURE)) return;
+    if (stopped || !isServerBetaFeatureEnabled(ACCOUNT_INBOX_BETA_FEATURE)) return;
     const account = await readAccountCredentials(credentialDir);
     if (!account?.userId || !account.organizationId || !account.hostId) return;
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;

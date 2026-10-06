@@ -6,7 +6,7 @@ import {
   type ListSavedInboxRecapsResponse,
   type SavedInboxRecapIdInput,
 } from "@synara/contracts";
-import { INBOX_BETA_FEATURE } from "@synara/shared/betaFeatures";
+import { ACCOUNT_INBOX_BETA_FEATURE } from "@synara/shared/betaFeatures";
 import { isServerBetaFeatureEnabled } from "./betaFeatureGate";
 import {
   remoteConnectionsUnavailableReason,
@@ -101,9 +101,9 @@ import { HostSecretsCoordinator } from "./hostSecrets/coordinator";
 import { hostSecretsSyncKeyPath } from "./hostSecrets/syncKeyStore";
 
 function requireInboxRecaps(): void {
-  if (!isServerBetaFeatureEnabled(INBOX_BETA_FEATURE)) {
+  if (!isServerBetaFeatureEnabled(ACCOUNT_INBOX_BETA_FEATURE)) {
     throw new WsRpcError({
-      message: "The Inbox is available in Synara Beta.",
+      message: "Saved Inbox history is available in Synara Beta.",
       code: "FEATURE_UNAVAILABLE",
       retryable: false,
     });

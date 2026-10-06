@@ -23,8 +23,15 @@ export type BetaOnlyFeature = string;
 /** Groups: the coordinator, its threads, the Group panel and the Library. */
 export const GROUPS_BETA_FEATURE = "groups";
 
-/** Inbox: the Inbox page and its `stats.getRecap` RPC. */
+/** Inbox (Stable and Beta): the Inbox page and its `stats.getRecap` RPC. */
 export const INBOX_BETA_FEATURE = "inbox";
+
+/**
+ * Account-saved Inbox history (Beta only): automatic private recap upload to
+ * the account and the saved-recap RPCs. Separate from the local Inbox so its
+ * Stable promotion stays an explicit decision.
+ */
+export const ACCOUNT_INBOX_BETA_FEATURE = "accountInbox";
 
 /**
  * Audio trail (Stable and Beta): the chat message trail moves with the Mac's
@@ -32,16 +39,15 @@ export const INBOX_BETA_FEATURE = "inbox";
  */
 export const AUDIO_TRAIL_BETA_FEATURE = "audio-trail";
 
-/** Auto-fix CI: the PR menu checkbox, its RPCs, and the server check watcher. */
+/** Auto-fix CI (Stable and Beta): the PR menu checkbox, RPCs, and check watcher. */
 export const PULL_REQUEST_AUTO_FIX_BETA_FEATURE = "pull-request-auto-fix";
 
 export const BETA_ONLY_FEATURES: readonly BetaOnlyFeature[] = [
   GROUPS_BETA_FEATURE,
-  INBOX_BETA_FEATURE,
   "tasks",
   "remoteConnections",
   "accountProfileSync",
-  PULL_REQUEST_AUTO_FIX_BETA_FEATURE,
+  ACCOUNT_INBOX_BETA_FEATURE,
 ];
 
 /**
