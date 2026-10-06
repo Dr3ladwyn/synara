@@ -89,6 +89,12 @@ Synara provides the shared operating surface around each provider:
 - Provider handoffs
 - Usage information where the provider exposes it
 
+Commands remain ordered within a task, while independent tasks use separate delivery lanes
+with bounded concurrency. A command receipt confirms durable acceptance; provider execution
+continues in the background. After restart, Synara resumes from the settled event prefix and
+the delivery journal, preserving completed deliveries and requiring reconciliation for ambiguous
+provider calls. A task waiting on a slow provider operation does not hold another task's lane.
+
 Claude's readable reasoning appears as compact progress text between tool actions while it works.
 Open a reasoning row to read its available detail. This text comes from the running provider;
 Synara does not make another model request to generate it. Models that do not return readable
@@ -572,3 +578,11 @@ they have no authenticated creating task.
 Delivery survives restart and duplicate events. An archived or deleted creator
 is not reopened; the result remains in the child and delivery is recorded as
 unavailable. Delivery is checked approximately once per second.
+
+## Keep Awake on macOS
+
+Keep Awake is off by default. On supported macOS hosts, Settings can keep the
+computer awake either for the server lifetime or while an agent turn is running.
+The server owns a `caffeinate -dims -w <server PID>` assertion; switching off or
+shutting down terminates it, deleting the last active thread releases its agent
+lease, and the native PID watch releases it if the server crashes. It does not change persistent macOS power settings.
